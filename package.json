@@ -1,9 +1,10 @@
 {
   "name": "event-cue-studio",
-  "version": "1.8.0",
+  "version": "1.10.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "node scripts/build.mjs"
+    "build": "node scripts/build.mjs",
+    "test": "node --test tests/*.test.mjs"
   }
 }
