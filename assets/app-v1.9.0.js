@@ -1,9 +1,11 @@
 (()=>{
   'use strict';
   const STORAGE_KEY='eventCueStudio.v1';
-  const APP_VERSION='1.8.0';
+  const APP_VERSION='1.9.0';
+  const Core=globalThis.EventCueCore;
+  if(!Core)throw new Error('EventCueCore가 먼저 로드되어야 합니다.');
   const $=s=>document.querySelector(s);
-  const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+  const esc=Core.escapeHtml;
   const nl=s=>esc(s).replace(/\n/g,'<br>');
   const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
   const clone=o=>JSON.parse(JSON.stringify(o));
@@ -57,19 +59,14 @@
     e.steps.some(s=>String(s.script||'').includes('번호표를 한 장 받아'))
   );
   const migrateData=data=>{
-    if(!data||!Array.isArray(data.events))throw new Error('invalid');
-    let changed=false;
-    if(!Array.isArray(data.trash)){data.trash=[];changed=true;}
+    let changed=Core.normalizeData(data,APP_VERSION);
     data.events=data.events.map(e=>{
       if(isLegacyIseoBirthday(e)&&e.templateRevision!==2){
         changed=true;
         return {...e,templateKey:'iseo-first-birthday',templateRevision:2,notes:'성장 영상과 케이크·축하 노래는 생략. 돌잡이 용품 7종과 돌잡이상·쪽집게상·아차상 추첨을 진행. 공식행사 약 18~22분.',steps:withIds(birthdaySteps),updatedAt:Date.now()};
       }
-      if(!e.status){changed=true;return {...e,status:'작성 중'};}
       return e;
     });
-    data.trash=data.trash.map(e=>({status:'작성 중',...e,deletedAt:e.deletedAt||Date.now()}));
-    if(data.version!==APP_VERSION){data.version=APP_VERSION;changed=true;}
     return changed;
   };
   const load=()=>{try{const raw=localStorage.getItem(STORAGE_KEY);if(raw){state.data=JSON.parse(raw);}else{state.data=seedData();save();}if(migrateData(state.data))save();}catch(e){state.data=seedData();save();}};
@@ -82,7 +79,9 @@
   const toast=(msg,action)=>{const el=$('#toast');el.innerHTML=`<span>${esc(msg)}</span>${action?` <button id="toastAction">${esc(action.label)}</button>`:''}`;el.classList.add('show');if(action)$('#toastAction').onclick=()=>{action.run();el.classList.remove('show');};clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove('show'),action?6000:1800);};
   const saveText=()=>state.saveError?'저장 실패 — 내용을 복사하거나 JSON 백업을 해 주세요.':state.lastSaved?`저장됨 · 마지막 저장 ${new Date(state.lastSaved).toLocaleTimeString('ko-KR',{hour:'numeric',minute:'2-digit'})}`:'저장됨';
   const updateSaveState=()=>{const el=$('#saveState');if(el)el.textContent=saveText();};
-  const vibrate=pattern=>{if(state.vibration&&navigator.vibrate)navigator.vibrate(pattern);};
+  const vibration=Core.createVibrationController({navigatorObject:navigator,storage:localStorage,isEnabled:()=>state.vibration,notify:message=>toast(message)});
+  const vibrate=pattern=>vibration.send(pattern);
+  const testVibration=()=>vibration.test();
   const openModal=html=>{$('#modalBody').innerHTML=html;$('#modal').classList.add('open');};
   const closeModal=()=>$('#modal').classList.remove('open');
   const shell=(title,sub,body,actions='')=>`<div class="app"><header class="topbar"><div class="brand">${esc(title)}${sub?`<small>${esc(sub)}</small>`:''}</div><div class="top-actions">${actions}</div></header><main class="content">${body}</main></div>`;
@@ -94,15 +93,14 @@
     events=events.filter(e=>filter==='all'||(filter==='upcoming'&&e.date&&e.date>=now)||(filter==='past'&&e.date&&e.date<now)||(filter==='undated'&&!e.date));
     events=events.filter(e=>status==='all'||e.status===status);
     events.sort((a,b)=>order==='dateAsc'?String(a.date||'9999').localeCompare(String(b.date||'9999')):order==='dateDesc'?String(b.date||'').localeCompare(String(a.date||'')):order==='title'?String(a.title).localeCompare(String(b.title),'ko'):Number(b.updatedAt||0)-Number(a.updatedAt||0));
-    const cards=events.map(e=>{const enabled=activeSteps(e).length,total=e.steps.length,mins=e.steps.map(s=>Number(String(s.duration||'').match(/\d+/)?.[0]||0)).reduce((a,b)=>a+b,0);return `<article class="event-card"><div class="card-top"><span class="tag">${esc(e.type||'행사')}</span><span class="status-tag">${esc(e.status||'작성 중')}</span></div><h3>${esc(e.title)}</h3><div class="meta">${esc(dateText(e.date)+timeText(e.time))}</div><div class="stats">순서 ${enabled}개${enabled!==total?` · 숨김 ${total-enabled}개`:''}${mins?` · 약 ${mins}분`:''}<br>마지막 수정 ${new Date(e.updatedAt||Date.now()).toLocaleDateString('ko-KR')}</div><div class="card-actions"><button class="btn small soft" data-action="edit" data-id="${e.id}">열기</button><button class="btn small primary" data-action="run" data-id="${e.id}">진행</button><button class="btn small" aria-label="${esc(e.title)} 더보기" data-more="${e.id}">더보기</button></div></article>`}).join('');
+    const cards=events.map(e=>{const enabled=activeSteps(e).length,total=e.steps.length,mins=e.steps.map(s=>Number(String(s.duration||'').match(/\d+/)?.[0]||0)).reduce((a,b)=>a+b,0);return Core.renderEventCard({event:e,enabled,total,minutes:mins,dateLabel:dateText(e.date)+timeText(e.time),lastModified:new Date(e.updatedAt||Date.now()).toLocaleDateString('ko-KR')});}).join('');
     const empty=state.data.events.length===0?`<div class="empty"><b>아직 만든 행사가 없습니다.</b><br>기본양식을 선택하거나 빈 큐시트로 새 행사를 만들어 보세요.<br><br><button class="btn primary" id="emptyNewBtn">새 행사 만들기</button> <button class="btn" id="emptyImportBtn">백업 파일 불러오기</button></div>`:`<div class="empty">검색·필터 조건에 맞는 행사가 없습니다.</div>`;
     const body=`<section class="hero"><h1>여러 행사에 계속 쓰는<br>모바일 큐시트</h1><p>행사 대본을 만들고, 한 장씩 넘기며 진행하고, 파일로 백업하세요.</p><div class="hero-actions"><button class="btn" id="newEventBtn">＋ 새 행사</button><button class="btn ghost" id="importBtn">백업 불러오기</button></div></section><div class="section-head"><h2>내 행사</h2><span>${state.data.events.length}개 저장됨</span></div><section class="panel list-controls"><input id="eventSearch" placeholder="행사명·종류·날짜 검색" value="${esc(state.query||'')}" aria-label="행사 검색"><div class="control-row"><select id="eventFilter" aria-label="날짜 필터"><option value="all">전체</option><option value="upcoming">예정 행사</option><option value="past">지난 행사</option><option value="undated">날짜 미정</option></select><select id="statusFilter" aria-label="상태 필터"><option value="all">모든 상태</option>${['작성 중','준비 완료','진행 완료','보관'].map(x=>`<option ${status===x?'selected':''}>${x}</option>`).join('')}</select><select id="eventSort" aria-label="정렬"><option value="updated">최근 수정순</option><option value="dateAsc">행사일 빠른순</option><option value="dateDesc">행사일 늦은순</option><option value="title">제목 가나다순</option></select></div></section>${cards?`<div class="grid">${cards}</div>`:empty}<div class="section-head"><h2>데이터 관리</h2><button class="btn small" id="trashBtn">휴지통 ${state.data.trash.length}</button></div><div class="panel"><div class="split-actions"><button class="btn small" id="exportAllBtn">전체 백업 저장</button><button class="btn small" id="installHelpBtn">홈 화면 설치 안내</button></div><p class="notice" style="margin-top:12px">행사 내용은 현재 휴대전화 브라우저에 저장됩니다. 중요한 수정 후에는 반드시 백업 파일을 저장해 두세요.</p></div><input class="hidden" type="file" id="importFile" accept="application/json,.json">`;
     $('#root').innerHTML=shell('행사 큐시트',`버전 ${APP_VERSION}`,body,'');
     $('#eventFilter').value=filter;$('#eventSort').value=order;
     const rerender=()=>renderHome();$('#eventSearch').oninput=e=>{state.query=e.target.value;rerender();};$('#eventFilter').onchange=e=>{state.filter=e.target.value;rerender();};$('#statusFilter').onchange=e=>{state.statusFilter=e.target.value;rerender();};$('#eventSort').onchange=e=>{state.sort=e.target.value;rerender();};
     $('#newEventBtn').onclick=showNewEventModal;$('#importBtn').onclick=()=>$('#importFile').click();$('#emptyNewBtn')?.addEventListener('click',showNewEventModal);$('#emptyImportBtn')?.addEventListener('click',()=>$('#importFile').click());$('#importFile').onchange=importBackup;$('#exportAllBtn').onclick=exportAll;$('#installHelpBtn').onclick=showInstallHelp;$('#trashBtn').onclick=renderTrash;
-    $('#resetAppBtn').onclick=()=>{if(confirm('현재 저장된 모든 행사와 수정 내용이 사라집니다. 예시 데이터로 초기화할까요?')){state.data=seedData();save();render();toast('초기화했습니다.');}};
-    document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>setView(b.dataset.action==='run'?'run':'editor',b.dataset.id));document.querySelectorAll('[data-more]').forEach(b=>b.onclick=()=>showEventMenu(b.dataset.more));
+    const resetButton=$('#resetAppBtn');if(resetButton)resetButton.onclick=()=>{if(confirm('현재 저장된 모든 행사와 수정 내용이 사라집니다. 예시 데이터로 초기화할까요?')){state.data=seedData();save();render();toast('초기화했습니다.');}};
   }
 
   function showNewEventModal(){
@@ -121,18 +119,19 @@
     };
     draw();
   }
-  function showEventMenu(id){
+  function requestDeleteEvent(id){confirmTrash(id);}
+  function openEventMenu(id){
     const e=eventById(id);if(!e)return;
     openModal(`<div class="modal-head"><h2>${esc(e.title)}</h2><button class="modal-close" id="modalClose" aria-label="닫기">×</button></div><div class="action-menu"><button class="btn" id="menuEdit">열기</button><button class="btn" id="menuRun">진행 화면 시작</button><button class="btn" id="menuCopy">복제</button><button class="btn" id="menuExport">JSON 내보내기</button><label class="field"><span>상태 변경</span><select id="menuStatus">${['작성 중','준비 완료','진행 완료','보관'].map(s=>`<option ${e.status===s?'selected':''}>${s}</option>`).join('')}</select></label><button class="btn danger" id="menuTrash">휴지통으로 이동</button></div>`);
     $('#modalClose').onclick=closeModal;$('#menuEdit').onclick=()=>{closeModal();setView('editor',id);};$('#menuRun').onclick=()=>{closeModal();setView('run',id);};$('#menuCopy').onclick=()=>duplicateEvent(id,true);$('#menuExport').onclick=()=>exportEvent(e);$('#menuStatus').onchange=ev=>{e.status=ev.target.value;e.updatedAt=Date.now();save();toast('행사 상태를 변경했습니다.');};$('#menuTrash').onclick=()=>confirmTrash(id);
   }
   function confirmTrash(id){
-    const e=eventById(id);if(!e)return;openModal(`<div class="modal-head"><h2>휴지통으로 이동</h2><button class="modal-close" id="modalClose" aria-label="닫기">×</button></div><p>“${esc(e.title)}”을 삭제하시겠습니까?<br>삭제한 행사는 휴지통으로 이동하며 복구할 수 있습니다.</p><div class="modal-actions"><button class="btn" id="cancelTrash">취소</button><button class="btn danger" id="doTrash">휴지통으로 이동</button></div>`);$('#modalClose').onclick=$('#cancelTrash').onclick=closeModal;$('#doTrash').onclick=()=>moveToTrash(id);
+    const e=eventById(id);if(!e)return;openModal(Core.renderDeleteConfirmation(e));$('#modalClose').onclick=$('#cancelTrash').onclick=closeModal;$('#doTrash').onclick=()=>moveToTrash(id);$('#cancelTrash').focus();
   }
   function moveToTrash(id){
-    const i=state.data.events.findIndex(e=>e.id===id);if(i<0)return;const [e]=state.data.events.splice(i,1);e.deletedAt=Date.now();state.data.trash.unshift(e);save();closeModal();setView('home');toast('행사를 휴지통으로 이동했습니다.',{label:'실행 취소',run:()=>restoreFromTrash(id)});
+    const moved=Core.moveEventToTrash(state.data,id);if(!moved)return;save();closeModal();setView('home');toast('행사를 휴지통으로 이동했습니다.',{label:'실행 취소',run:()=>restoreFromTrash(id)});
   }
-  function restoreFromTrash(id){const i=state.data.trash.findIndex(e=>e.id===id);if(i<0)return;const [e]=state.data.trash.splice(i,1);delete e.deletedAt;e.updatedAt=Date.now();state.data.events.unshift(e);save();render();toast('행사를 복원했습니다.');}
+  function restoreFromTrash(id){const restored=Core.restoreEventFromTrash(state.data,id);if(!restored)return;save();render();toast('행사를 복원했습니다.');}
   function renderTrash(){
     const rows=state.data.trash.map(e=>`<article class="event-card"><span class="tag">휴지통 · ${esc(e.type||'행사')}</span><h3>${esc(e.title)}</h3><div class="meta">삭제일 ${new Date(e.deletedAt||Date.now()).toLocaleDateString('ko-KR')}</div><div class="card-actions"><button class="btn small soft" data-restore="${e.id}">복원</button><button class="btn small danger" data-permanent="${e.id}">영구 삭제</button></div></article>`).join('');
     const body=`<div class="editor-actions"><button class="btn" id="backHome">← 내 행사</button>${state.data.trash.length?'<button class="btn danger" id="emptyTrash">휴지통 비우기</button>':''}</div><div class="section-head"><h2>휴지통</h2><span>${state.data.trash.length}개</span></div>${rows?`<div class="grid">${rows}</div>`:'<div class="empty">휴지통이 비어 있습니다.</div>'}`;
@@ -142,7 +141,7 @@
   function confirmEmptyTrash(){openModal(`<div class="modal-head"><h2>휴지통 비우기</h2><button class="modal-close" id="modalClose" aria-label="닫기">×</button></div><p><b>이 작업은 되돌릴 수 없습니다.</b><br>휴지통의 모든 행사를 영구 삭제하시겠습니까?</p><div class="modal-actions"><button class="btn" id="cancelEmpty">취소</button><button class="btn danger" id="doEmpty">전체 비우기</button></div>`);$('#modalClose').onclick=$('#cancelEmpty').onclick=closeModal;$('#doEmpty').onclick=()=>{state.data.trash=[];save();closeModal();renderTrash();toast('휴지통을 비웠습니다.');};}
   function createFromTemplate(key){
     const template=templates.find(t=>t.key===key);
-    const event={id:uid(),templateKey:template?.key||'blank',templateRevision:template?.revision||1,type:template?.type||'일반 행사',status:'작성 중',title:template?.title||'새 행사',date:today(),time:'',location:'',host:'',notes:'',steps:withIds(clone(template?.steps||[])),createdAt:Date.now(),updatedAt:Date.now()};
+    const event=Core.createEventFromTemplate(template,{id:uid,stepId:uid,date:today()});
     state.data.events.unshift(event);save();closeModal();setView('editor',event.id);
   }
   function showCopyPicker(){
@@ -176,10 +175,10 @@
 
   function renderRun(){
     const e=eventById(state.eventId);if(!e){setView('home');return;}state.runActiveSteps=activeSteps(e);if(!state.runActiveSteps.length){alert('사용 중인 진행 순서가 없습니다.');setView('editor',e.id);return;}const saved=parseInt(localStorage.getItem('cueRunIndex.'+e.id)||'0',10);state.runIndex=Math.max(0,Math.min(saved,state.runActiveSteps.length-1));state.vibration=localStorage.getItem('cueVibration')!=='off';state.fontIndex=parseInt(localStorage.getItem('cueFont')||'1',10);state.fontIndex=Math.max(0,Math.min(fontLevels.length-1,state.fontIndex));
-    $('#root').innerHTML=`<div class="run"><header class="run-top"><div class="run-row"><div class="run-title"><b>${esc(e.title)}</b><span id="elapsed">00:00 · ${esc(e.host||'사회자 미정')}</span></div><div class="run-actions"><button class="iconbtn" id="runListBtn">목록</button><button class="iconbtn" id="fontRunBtn">A＋</button><button class="iconbtn ${state.vibration?'active':''}" id="vibeRunBtn">진동</button><button class="iconbtn" id="wakeRunBtn">화면</button><button class="iconbtn" id="exitRunBtn">종료</button></div></div><div class="progress"><i id="runProgress"></i></div></header><main class="run-stage" id="runStage"><div class="run-track" id="runTrack">${state.runActiveSteps.map((s,i)=>`<section class="run-slide"><article class="run-card"><div class="run-meta"><span class="run-num">${String(i+1).padStart(2,'0')}</span><span class="run-duration">${esc(s.duration||'')}</span></div><h1>${esc(s.title)}</h1><div class="run-script">${nl(s.script||'')}</div>${s.owner?`<div class="run-cue"><b>담당</b><br>${nl(s.owner)}</div>`:''}${s.materials?`<div class="run-cue"><b>준비물</b><br>${nl(s.materials)}</div>`:''}${s.avCue?`<div class="run-cue"><b>음향·영상·조명 큐</b><br>${nl(s.avCue)}</div>`:''}${s.cue?`<div class="run-cue"><b>진행 메모</b><br>${nl(s.cue)}</div>`:''}${s.contingency?`<div class="run-cont"><b>돌발상황·대체 멘트</b><br>${nl(s.contingency)}</div>`:''}</article></section>`).join('')}</div></main><footer class="run-foot"><div class="run-counter" id="runCounter"></div><div class="run-nav"><button id="runPrev">◀ 이전</button><button id="runDone">완료 표시</button><button class="next" id="runNext">다음 ▶</button></div></footer></div><div class="run-list" id="runList"><section class="run-list-sheet"><div class="modal-head"><h2>전체 진행 순서</h2><button class="modal-close" id="closeRunList">×</button></div><div id="runListItems"></div></section></div>`;
+    $('#root').innerHTML=`<div class="run"><header class="run-top"><div class="run-row"><div class="run-title"><b>${esc(e.title)}</b><span id="elapsed">00:00 · ${esc(e.host||'사회자 미정')}</span></div><div class="run-actions"><button class="iconbtn" id="runListBtn">목록</button><button class="iconbtn" id="fontRunBtn">A＋</button><button class="iconbtn ${state.vibration?'active':''}" id="vibeRunBtn">진동</button><button class="iconbtn" id="vibeTestBtn">테스트</button><button class="iconbtn" id="wakeRunBtn">화면</button><button class="iconbtn" id="exitRunBtn">종료</button></div></div><div class="progress"><i id="runProgress"></i></div></header><main class="run-stage" id="runStage"><div class="run-track" id="runTrack">${state.runActiveSteps.map((s,i)=>`<section class="run-slide"><article class="run-card"><div class="run-meta"><span class="run-num">${String(i+1).padStart(2,'0')}</span><span class="run-duration">${esc(s.duration||'')}</span></div><h1>${esc(s.title)}</h1><div class="run-script">${nl(s.script||'')}</div>${s.owner?`<div class="run-cue"><b>담당</b><br>${nl(s.owner)}</div>`:''}${s.materials?`<div class="run-cue"><b>준비물</b><br>${nl(s.materials)}</div>`:''}${s.avCue?`<div class="run-cue"><b>음향·영상·조명 큐</b><br>${nl(s.avCue)}</div>`:''}${s.cue?`<div class="run-cue"><b>진행 메모</b><br>${nl(s.cue)}</div>`:''}${s.contingency?`<div class="run-cont"><b>돌발상황·대체 멘트</b><br>${nl(s.contingency)}</div>`:''}</article></section>`).join('')}</div></main><footer class="run-foot"><div class="run-counter" id="runCounter"></div><div class="run-nav"><button id="runPrev">◀ 이전</button><button id="runDone">완료 표시</button><button class="next" id="runNext">다음 ▶</button></div></footer></div><div class="run-list" id="runList"><section class="run-list-sheet"><div class="modal-head"><h2>전체 진행 순서</h2><button class="modal-close" id="closeRunList">×</button></div><div id="runListItems"></div></section></div>`;
     document.documentElement.style.setProperty('--run-fs',fontLevels[state.fontIndex]);$('#runListItems').innerHTML=state.runActiveSteps.map((s,i)=>`<button class="run-list-item" data-run-index="${i}"><span class="run-list-num">${i+1}</span><span><b>${esc(s.title)}</b><span>${esc(s.duration||'')}${s.completed?' · 완료':''}</span></span></button>`).join('');
     $('#exitRunBtn').onclick=()=>setView('editor',e.id);$('#runPrev').onclick=()=>goRun(state.runIndex-1,'prev');$('#runNext').onclick=()=>goRun(state.runIndex+1,'next');$('#runDone').onclick=()=>{const s=state.runActiveSteps[state.runIndex];s.completed=!s.completed;save();updateRunUI();vibrate(s.completed?70:[30,45,30]);};$('#runListBtn').onclick=()=>$('#runList').classList.add('open');$('#closeRunList').onclick=()=>$('#runList').classList.remove('open');$('#runList').onclick=ev=>{if(ev.target.id==='runList')ev.currentTarget.classList.remove('open');};document.querySelectorAll('[data-run-index]').forEach(b=>b.onclick=()=>{goRun(+b.dataset.runIndex,'jump');$('#runList').classList.remove('open');});
-    $('#vibeRunBtn').onclick=()=>{state.vibration=!state.vibration;localStorage.setItem('cueVibration',state.vibration?'on':'off');updateRunUI();if(state.vibration)vibrate(70);};$('#fontRunBtn').onclick=()=>{state.fontIndex=(state.fontIndex+1)%fontLevels.length;localStorage.setItem('cueFont',state.fontIndex);document.documentElement.style.setProperty('--run-fs',fontLevels[state.fontIndex]);$('#fontRunBtn').textContent=state.fontIndex===fontLevels.length-1?'A−':'A＋';};$('#wakeRunBtn').onclick=toggleWake;
+    $('#vibeRunBtn').onclick=()=>{state.vibration=!state.vibration;vibration.setEnabled(state.vibration);updateRunUI();if(state.vibration)vibrate(70);};$('#vibeTestBtn').onclick=testVibration;$('#fontRunBtn').onclick=()=>{state.fontIndex=(state.fontIndex+1)%fontLevels.length;localStorage.setItem('cueFont',state.fontIndex);document.documentElement.style.setProperty('--run-fs',fontLevels[state.fontIndex]);$('#fontRunBtn').textContent=state.fontIndex===fontLevels.length-1?'A−':'A＋';};$('#wakeRunBtn').onclick=toggleWake;
     const stage=$('#runStage');stage.addEventListener('touchstart',ev=>{const t=ev.touches[0];touchStart={x:t.clientX,y:t.clientY};},{passive:true});stage.addEventListener('touchend',ev=>{if(!touchStart)return;const t=ev.changedTouches[0],dx=t.clientX-touchStart.x,dy=t.clientY-touchStart.y;touchStart=null;if(Math.abs(dx)>55&&Math.abs(dx)>Math.abs(dy)*1.25)goRun(state.runIndex+(dx<0?1:-1),dx<0?'next':'prev');},{passive:true});
     document.onkeydown=runKeyHandler;startRunTimer();goRun(state.runIndex,'init');
   }
@@ -212,6 +211,9 @@
         if(reloading)return;reloading=true;location.reload();
       });
     }catch(e){}
+  });
+  Core.bindEventCardActions($('#root'),{
+    edit:id=>setView('editor',id),run:id=>setView('run',id),delete:requestDeleteEvent,more:openEventMenu
   });
   load();render();
 })();
