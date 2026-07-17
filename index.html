@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="행사 진행, 사회 대본, 모바일 큐시트를 한곳에서 관리하는 오프라인 지원 큐시트 앱">
+<meta name="theme-color" content="#285f56">
+<meta name="robots" content="index,follow,max-image-preview:large">
+<meta name="application-version" content="1.5.0">
+
+<meta property="og:type" content="website">
+<meta property="og:locale" content="ko_KR">
+<meta property="og:site_name" content="행사 큐시트">
+<meta property="og:title" content="행사 큐시트 프로그램">
+<meta property="og:description" content="행사 진행, 사회 대본, 모바일 큐시트를 한곳에서 관리하는 오프라인 지원 큐시트 앱">
+<meta property="og:image" content="/og-thumbnail-v1.5.jpg">
+<meta property="og:image:secure_url" content="/og-thumbnail-v1.5.jpg">
+<meta property="og:image:type" content="image/jpeg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="행사 큐시트 프로그램 미리보기">
+<!-- NETLIFY_ABSOLUTE_META -->
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="행사 큐시트 프로그램">
+<meta name="twitter:description" content="행사 진행, 사회 대본, 모바일 큐시트를 한곳에서 관리하는 오프라인 지원 큐시트 앱">
+<meta name="twitter:image" content="/og-thumbnail-v1.5.jpg">
+<meta name="twitter:image:alt" content="행사 큐시트 프로그램 미리보기">
+
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="행사 큐시트">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<link rel="stylesheet" href="/assets/app-v1.5.css">
+<title>행사 큐시트 프로그램</title>
+
+<script>
+  // 로컬 미리보기나 빌드가 생략된 배포에서도 브라우저에는 현재 주소를 반영합니다.
+  // Netlify 정식 빌드에서는 서버가 읽는 OG 태그까지 절대주소로 자동 변환됩니다.
+  (() => {
+    if (!/^https?:$/.test(location.protocol)) return;
+    const pageUrl = new URL('/', location.origin).href;
+    const imageUrl = new URL('/og-thumbnail-v1.5.jpg', location.origin).href;
+    const set = (selector, value) => {
+      const el = document.querySelector(selector);
+      if (el) el.setAttribute('content', value);
+    };
+    set('meta[property="og:image"]', imageUrl);
+    set('meta[property="og:image:secure_url"]', imageUrl);
+    set('meta[name="twitter:image"]', imageUrl);
+    set('meta[property="og:url"]', pageUrl);
+    const canonical = document.querySelector('link[rel="canonical"]');
+    if (canonical) canonical.setAttribute('href', pageUrl);
+  })();
+</script>
+<script>
+  // 주소 끝에 ?reset=1을 붙이면 이전 서비스워커·오프라인 캐시만 정리합니다.
+  // 행사 편집 내용(localStorage)은 삭제하지 않습니다.
+  (async () => {
+    if (!new URLSearchParams(location.search).has('reset')) return;
+    try {
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(reg => reg.unregister()));
+      }
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(key => caches.delete(key)));
+      }
+    } catch (_) {}
+    history.replaceState(null, '', location.pathname);
+    location.reload();
+  })();
+</script>
+</head>
+<body>
+<div id="root"></div>
+<div class="modal-backdrop" id="modal"><div class="modal" id="modalBody"></div></div>
+<div class="toast" id="toast"></div>
+<script defer src="/assets/app-v1.5.js"></script>
+</body>
+</html>

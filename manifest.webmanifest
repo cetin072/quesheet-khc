@@ -1,0 +1,27 @@
+{
+  "id": "/",
+  "name": "행사 큐시트 프로그램",
+  "short_name": "행사 큐시트",
+  "description": "행사 대본을 편집하고 모바일에서 한 장씩 넘기며 진행하는 오프라인 큐시트 앱",
+  "lang": "ko-KR",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f4f0e8",
+  "theme_color": "#285f56",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

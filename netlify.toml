@@ -1,0 +1,16 @@
+[build]
+  command = "node scripts/build.mjs"
+  publish = "dist"
+
+[build.processing]
+  skip_processing = true
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"

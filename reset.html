@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>큐시트 캐시 정리</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;background:#f4f0e8;color:#262521;display:grid;place-items:center;min-height:100vh;margin:0}.box{background:#fffdfa;border:1px solid #dfd7ca;border-radius:18px;padding:28px;max-width:460px;margin:20px;text-align:center}h1{font-size:22px}p{line-height:1.65;color:#766f65}</style></head>
+<body><div class="box"><h1>이전 화면을 정리하고 있습니다</h1><p>서비스 워커와 오프라인 캐시만 삭제합니다.<br>휴대전화에 편집해 둔 행사 내용은 지우지 않습니다.</p></div>
+<script>
+(async()=>{
+  try{
+    if('serviceWorker' in navigator){
+      const regs=await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r=>r.unregister()));
+    }
+    if('caches' in window){
+      const keys=await caches.keys();
+      await Promise.all(keys.map(k=>caches.delete(k)));
+    }
+  }catch(e){}
+  location.replace('/?fresh='+Date.now());
+})();
+</script></body></html>
