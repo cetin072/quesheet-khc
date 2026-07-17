@@ -1,10 +1,10 @@
-const CACHE_NAME = 'event-cue-studio-v1.7.0-20260718';
+const CACHE_NAME = 'event-cue-studio-v1.8.0-20260718';
 const APP_SHELL = [
   '/',
   '/index.html',
-  '/assets/app-v1.7.css',
-  '/assets/templates-v1.7.js',
-  '/assets/app-v1.7.js',
+  '/assets/app-v1.8.css',
+  '/assets/templates-v1.8.js',
+  '/assets/app-v1.8.js',
   '/manifest.webmanifest',
   '/icon-192.png',
   '/icon-512.png',
