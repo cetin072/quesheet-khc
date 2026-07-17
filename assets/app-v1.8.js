@@ -202,7 +202,7 @@
 
   function render(){if(state.view==='home')renderHome();else if(state.view==='editor')renderEditor();else if(state.view==='script')renderScript();else if(state.view==='run')renderRun();}
   $('#modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal();});
-  window.addEventListener('beforeunload',save);document.addEventListener('visibilitychange',async()=>{if(document.visibilityState==='visible'&&state.view==='run'&&$('#wakeRunBtn')?.classList.contains('active')&&'wakeLock'in navigator){try{wakeLock=await navigator.wakeLock.request('screen');}catch(e){}}});
+  window.addEventListener('beforeunload',ev=>{save();if(state.saveError){ev.preventDefault();ev.returnValue='';}});document.addEventListener('visibilitychange',async()=>{if(document.visibilityState==='visible'&&state.view==='run'&&$('#wakeRunBtn')?.classList.contains('active')&&'wakeLock'in navigator){try{wakeLock=await navigator.wakeLock.request('screen');}catch(e){}}});
   if('serviceWorker'in navigator&&location.protocol.startsWith('http'))window.addEventListener('load',async()=>{
     try{
       const reg=await navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'});
