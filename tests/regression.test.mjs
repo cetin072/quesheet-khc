@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-await import('../assets/app-core-v1.10.0.js');
+await import('../assets/app-core-v1.10.1.js');
 const Core=globalThis.EventCueCore;
 
 const sample=()=>({version:'1.8.0',events:[{id:'a',title:'첫 행사',steps:[]}],trash:[]});
@@ -85,7 +85,7 @@ test('기본양식은 깊은 복사된 새 행사로 생성된다',()=>{
 
 test('다섯 가지 기본양식과 필수 순서가 유지된다',async()=>{
   globalThis.window=globalThis;
-  await import('../assets/templates-v1.10.0.js');
+  await import('../assets/templates-v1.10.1.js');
   assert.equal(globalThis.EVENT_TEMPLATES.length,5);
   assert.deepEqual(globalThis.EVENT_TEMPLATES.map(template=>template.steps.length),[11,13,12,11,12]);
   assert.ok(globalThis.EVENT_TEMPLATES.every(template=>template.steps.every(step=>step.title&&step.script)));
@@ -113,19 +113,69 @@ test('진동 테스트는 지정 패턴과 반환값을 처리한다',()=>{
   assert.deepEqual(pattern,[200,100,200]);
 });
 
-test('진행 화면에 진동 테스트 버튼과 호출 연결이 남아 있다',async()=>{
-  const source=await readFile(new URL('../assets/app-v1.10.0.js',import.meta.url),'utf8');
-  assert.match(source,/id="vibeTestBtn"/);
-  assert.match(source,/\$\('#vibeTestBtn'\)\.onclick=testVibration/);
+test('진동 테스트는 진행 화면에서 제거되고 홈 옵션에 연결된다',async()=>{
+  const source=await readFile(new URL('../assets/app-v1.10.1.js',import.meta.url),'utf8');
+  assert.doesNotMatch(source,/id="vibeTestBtn"|\$\('#vibeTestBtn'\)/);
+  assert.match(source,/id="optionVibrationTest"/);
+  assert.match(source,/\$\('#optionVibrationTest'\)\.onclick=testVibration/);
+});
+
+test('진행 화면에는 목록·A+·종료만 있고 모호한 화면 버튼이 없다',async()=>{
+  const source=await readFile(new URL('../assets/app-v1.10.1.js',import.meta.url),'utf8');
+  assert.match(source,/id="runListBtn"/);
+  assert.match(source,/id="fontRunBtn"/);
+  assert.match(source,/id="exitRunBtn"/);
+  assert.doesNotMatch(source,/id="vibeRunBtn"|id="wakeRunBtn"|>화면<|>테스트</);
+  for(const id of ['runPrev','runDone','runNext'])assert.match(source,new RegExp(`id="${id}"`));
+});
+
+test('홈 화면에 진행 옵션 버튼과 저장 경로가 존재한다',async()=>{
+  const source=await readFile(new URL('../assets/app-v1.10.1.js',import.meta.url),'utf8');
+  assert.match(source,/id="optionsBtn"/);
+  assert.match(source,/\$\('#optionsBtn'\)\.onclick=showOptionsModal/);
+  assert.match(source,/function showOptionsModal\(\)/);
+  assert.match(source,/id="modalClose"/);
+  assert.match(source,/id="optionsDone"/);
+  assert.match(source,/\$\('#modalClose'\)\.onclick=\$\('#optionsDone'\)\.onclick=closeModal/);
+  assert.match(source,/cueVibration/);
+  assert.match(source,/cueWakeLock/);
+  assert.match(source,/cueFont/);
+});
+
+test('Wake Lock 미지원 환경은 오류 없이 안내한다',async()=>{
+  const messages=[];
+  const controller=Core.createWakeLockController({navigatorObject:{},notify:message=>messages.push(message)});
+  assert.equal(await controller.request(true),false);
+  assert.match(messages[0],/지원하지 않습니다/);
+  await controller.release();
+});
+
+test('Wake Lock 지원 환경은 screen 요청과 해제를 수행한다',async()=>{
+  let requested='',released=false;
+  const lock={addEventListener(){},release:async()=>{released=true;}};
+  const controller=Core.createWakeLockController({navigatorObject:{wakeLock:{request:async type=>(requested=type,lock)}},notify(){}});
+  assert.equal(await controller.request(true),true);
+  assert.equal(requested,'screen');
+  assert.equal(controller.active(),true);
+  await controller.release();
+  assert.equal(released,true);
+  assert.equal(controller.active(),false);
+});
+
+test('진행 진입 시 화면 유지 설정과 A+ 단계 설정을 반영한다',async()=>{
+  const source=await readFile(new URL('../assets/app-v1.10.1.js',import.meta.url),'utf8');
+  assert.match(source,/if\(state\.wakeEnabled\)void wake\.request\(true\)/);
+  assert.match(source,/state\.fontIndex=\(state\.fontIndex\+1\)%fontLevels\.length/);
+  assert.match(source,/localStorage\.setItem\('cueFont'/);
 });
 
 test('서비스워커는 최신 핵심 자산을 모두 캐시한다',async()=>{
   const source=await readFile(new URL('../sw.js',import.meta.url),'utf8');
-  for(const asset of ['app-v1.10.0.css','templates-v1.10.0.js','app-core-v1.10.0.js','app-v1.10.0.js'])assert.match(source,new RegExp(asset.replaceAll('.','\\.')));
+  for(const asset of ['app-v1.10.1.css','templates-v1.10.1.js','app-core-v1.10.1.js','app-v1.10.1.js'])assert.match(source,new RegExp(asset.replaceAll('.','\\.')));
 });
 
 test('첫 화면에는 검색 아이콘과 열고 닫는 패널 코드가 있고 더보기 메뉴가 없다',async()=>{
-  const source=await readFile(new URL('../assets/app-v1.10.0.js',import.meta.url),'utf8');
+  const source=await readFile(new URL('../assets/app-v1.10.1.js',import.meta.url),'utf8');
   assert.match(source,/id="searchToggle"/);
   assert.match(source,/id="searchPanel"/);
   assert.match(source,/id="closeSearch"/);

@@ -174,5 +174,34 @@
     }
   });
 
-  return {escapeHtml,parseDateKey,getLocalDateKey,calculateDday,classifyEventDate,compareEventsByDday,sortEvents,filterEvents,normalizeData,renderEventCard,bindEventCardActions,renderDeleteConfirmation,moveEventToTrash,restoreEventFromTrash,createEventFromTemplate,createVibrationController};
+  const createWakeLockController=({navigatorObject,notify})=>{
+    let lock=null;
+    return {
+      supported:()=>typeof navigatorObject?.wakeLock?.request==='function',
+      active:()=>Boolean(lock),
+      async request(enabled=true){
+        if(!enabled)return false;
+        if(typeof navigatorObject?.wakeLock?.request!=='function'){
+          notify('이 기기 또는 브라우저에서는 화면 꺼짐 방지를 지원하지 않습니다.');
+          return false;
+        }
+        try{
+          if(lock)return true;
+          lock=await navigatorObject.wakeLock.request('screen');
+          lock.addEventListener?.('release',()=>{lock=null;});
+          return true;
+        }catch(_){
+          lock=null;
+          notify('화면 꺼짐 방지를 켜지 못했습니다. 기기의 화면 자동 꺼짐 설정을 확인해 주세요.');
+          return false;
+        }
+      },
+      async release(){
+        try{if(lock)await lock.release();}catch(_){}
+        lock=null;
+      }
+    };
+  };
+
+  return {escapeHtml,parseDateKey,getLocalDateKey,calculateDday,classifyEventDate,compareEventsByDday,sortEvents,filterEvents,normalizeData,renderEventCard,bindEventCardActions,renderDeleteConfirmation,moveEventToTrash,restoreEventFromTrash,createEventFromTemplate,createVibrationController,createWakeLockController};
 });
