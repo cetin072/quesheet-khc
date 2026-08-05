@@ -182,3 +182,24 @@ test('첫 화면에는 검색 아이콘과 열고 닫는 패널 코드가 있고
   assert.match(source,/id="resetFilters"/);
   assert.doesNotMatch(source,/openEventMenu|data-more|menuMore/);
 });
+
+test('태장 개소식 최종 시나리오는 17개 순서와 확정 행사정보를 포함한다',async()=>{
+  const source=await readFile(new URL('../assets/app-v1.10.1.js',import.meta.url),'utf8');
+  const start=source.indexOf('const openingSteps=');
+  const end=source.indexOf('const taejangOpeningNotes=',start);
+  const openingBlock=source.slice(start,end);
+  assert.equal((openingBlock.match(/"title":/g)||[]).length,17);
+  for(const value of ['00. 내빈 착석 안내','01. 식전 음악행사','11. 현판 동시 제막','16. 모회사별 촬영 ④ 현대비앤지스틸㈜ 및 폐식'])assert.ok(openingBlock.includes(value));
+  assert.match(source,/time:'15:00'/);
+  assert.match(source,/창원 신화더플렉스시티 태장㈜ 사업장/);
+  assert.match(source,/templateKey:'taejang-opening-20260812'/);
+  assert.match(source,/templateRevision:3/);
+});
+
+test('기존 태장 개소식 초안만 최종 시나리오로 갱신하는 마이그레이션이 있다',async()=>{
+  const source=await readFile(new URL('../assets/app-v1.10.1.js',import.meta.url),'utf8');
+  assert.match(source,/const isLegacyTaejangOpening=/);
+  assert.match(source,/e\.location==='태장 본점'/);
+  assert.match(source,/s\.title==='현판식 또는 테이프 커팅'/);
+  assert.match(source,/if\(isLegacyTaejangOpening\(e\)\)/);
+});
