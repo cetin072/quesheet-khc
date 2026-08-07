@@ -1,15 +1,17 @@
 (()=>{
   'use strict';
   const STORAGE_KEY='eventCueStudio.v1';
-  const APP_VERSION='1.8.0';
+  const APP_VERSION='1.10.1';
+  const Core=globalThis.EventCueCore;
+  if(!Core)throw new Error('EventCueCore가 먼저 로드되어야 합니다.');
   const $=s=>document.querySelector(s);
-  const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+  const esc=Core.escapeHtml;
   const nl=s=>esc(s).replace(/\n/g,'<br>');
   const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
   const clone=o=>JSON.parse(JSON.stringify(o));
-  const today=()=>new Date().toISOString().slice(0,10);
-  let wakeLock=null,runTimer=null,runSeconds=0,touchStart=null;
-  let state={data:null,view:'home',eventId:null,stepId:null,runIndex:0,runActiveSteps:[],fontIndex:1,vibration:true,lastSaved:null,saveError:false};
+  const today=()=>Core.getLocalDateKey(new Date());
+  let runTimer=null,runSeconds=0,touchStart=null;
+  let state={data:null,view:'home',eventId:null,stepId:null,runIndex:0,runActiveSteps:[],fontIndex:1,vibration:true,wakeEnabled:false,lastSaved:null,saveError:false,searchOpen:false,query:'',filter:'all',statusFilter:'all',sort:'dday'};
   const fontLevels=[.9,1,1.13,1.28];
   const templates=Array.isArray(window.EVENT_TEMPLATES)?window.EVENT_TEMPLATES:[];
 
@@ -32,22 +34,184 @@
   ];
 
   const openingSteps=[
-    {title:'행사 시작 전 안내',duration:'시작 10분 전',script:'잠시 후 농업회사법인 태장 주식회사 개소식을 시작하겠습니다. 참석하신 내빈과 임직원 여러분께서는 안내에 따라 자리에 착석해 주시기 바랍니다.',cue:'마이크, 좌석, 참석자 명단, 현판 또는 테이프 커팅 물품, 기념촬영 위치를 최종 확인한다.',contingency:'주요 내빈 도착이 늦어질 경우 담당자와 시작 시각을 협의한다.'},
-    {title:'개회 선언',duration:'약 1분',script:'바쁘신 가운데 농업회사법인 태장 주식회사 개소식에 참석해 주신 여러분께 진심으로 감사드립니다.\n\n지금부터 태장 주식회사 개소식을 시작하겠습니다.',cue:'사회자 소개가 필요하면 첫 문장 뒤에 이름과 소속을 덧붙인다.',contingency:''},
-    {title:'국민의례',duration:'약 3분',script:'먼저 국민의례가 있겠습니다. 모두 자리에서 일어나 정면의 국기를 향해 주시기 바랍니다.\n\n국기에 대하여 경례. 바로.\n\n이하 의식은 행사 여건에 따라 생략하겠습니다. 모두 자리에 앉아주시기 바랍니다.',cue:'국민의례를 진행하지 않으면 이 순서를 사용 안 함으로 설정한다. 음원과 국기 위치를 사전에 확인한다.',contingency:'음향 문제가 있으면 묵념 없이 국기에 대한 경례만 간략히 진행한다.',enabled:false},
-    {title:'내빈 소개',duration:'약 4분',script:'오늘 태장의 새로운 출발을 축하하기 위해 귀한 걸음을 해주신 내빈 여러분을 소개하겠습니다.\n\n〔소속·직책〕 〔성함〕님 참석하셨습니다.\n\n소개받으신 분께서는 자리에서 가볍게 인사해 주시면 감사하겠습니다.',cue:'행사 직전 확정된 참석자 명단 순서대로 소개한다. 참석하지 않은 사람은 읽지 않는다.',contingency:'내빈이 많으면 주요 내빈만 개별 소개하고 나머지는 “그 밖의 내빈 여러분”으로 묶어 소개한다.'},
-    {title:'태장 소개',duration:'약 2분',script:'태장 주식회사는 농업을 기반으로 장애인에게 안정적인 일자리를 제공하고, 기업과 지역사회가 함께 성장하는 가치를 실현하기 위해 설립되었습니다.\n\n자회사형 장애인 표준사업장이자 경상남도 동행일자리 1호 기업으로서, 오늘 새로운 사업장에서 힘찬 출발을 하게 되었습니다.',cue:'회사소개 영상이나 발표가 있으면 이 멘트를 짧게 줄이고 발표자에게 마이크를 넘긴다.',contingency:''},
-    {title:'대표이사 인사',duration:'약 5분',script:'이어서 태장 주식회사 이영희 대표이사님의 인사말씀이 있겠습니다. 큰 박수로 맞아주시기 바랍니다.\n\n〔인사말 종료 후〕 감사드립니다.',cue:'대표이사 동선과 마이크 전달 담당자를 확인한다.',contingency:'대표이사가 직접 사회를 보는 경우 다른 임원이 소개하도록 수정한다.'},
-    {title:'내빈 축사',duration:'각 3~5분',script:'다음은 〔소속·직책〕 〔성함〕님의 축사가 있겠습니다. 큰 박수로 맞아주시기 바랍니다.\n\n〔축사 종료 후〕 귀한 말씀 감사합니다.',cue:'축사 순서와 참석 여부를 행사 직전에 다시 확인한다.',contingency:'축사자가 불참하면 해당 순서를 즉시 건너뛴다.'},
-    {title:'현판식 또는 테이프 커팅',duration:'약 5분',script:'이어서 태장의 새로운 출발을 기념하는 〔현판 제막식·테이프 커팅식〕을 진행하겠습니다.\n\n참여하실 내빈께서는 안내에 따라 지정된 위치로 이동해 주시기 바랍니다.\n\n제가 하나, 둘, 셋을 외치면 함께 진행해 주십시오. 하나, 둘, 셋!\n\n태장의 새로운 출발을 축하하며 큰 박수 부탁드립니다!',cue:'참여자 명단, 서는 순서, 장갑·가위·현판 끈, 사진 촬영 위치를 사전에 정한다.',contingency:'공간이 좁거나 일정이 지연되면 대표 내빈만 참여하도록 축소한다.'},
-    {title:'기념촬영',duration:'약 5분',script:'이어서 기념촬영을 진행하겠습니다. 먼저 주요 내빈과 임직원께서는 안내에 따라 촬영 위치로 이동해 주시기 바랍니다.\n\n촬영 후에는 참석자 전체 기념사진을 진행하겠습니다.',cue:'사진 순서를 주요 내빈 → 모회사 관계자 → 임직원 → 전체 참석자 순으로 미리 확정한다.',contingency:'시간이 부족하면 전체 사진 한 장으로 통합한다.'},
-    {title:'폐회 및 안내',duration:'약 1분',script:'이상으로 농업회사법인 태장 주식회사 개소식의 공식행사를 모두 마치겠습니다.\n\n오늘 귀한 걸음으로 태장의 새로운 시작을 함께해 주신 모든 분께 다시 한번 감사드립니다.\n\n이후 〔사업장 관람·다과·오찬〕이 준비되어 있으니 안내에 따라 함께해 주시기 바랍니다. 감사합니다.',cue:'주차, 식사, 시설 관람 또는 답례품 안내를 실제 운영계획에 맞게 수정한다.',contingency:''}
+    {
+      "title": "00. 내빈 착석 안내",
+      "duration": "15분 · 14:45~15:00",
+      "script": "안녕하십니까. 오늘 개소식 진행을 맡은 사회자 ○○○입니다.\n잠시 후 오후 3시부터 농업회사법인 태장 주식회사 개소식이 시작됩니다.\n참석해 주신 내빈 여러분께서는 앞쪽 좌석부터 착석해 주시기 바랍니다.\n\n행사 시작 3분 전입니다. 원활한 진행을 위해 휴대전화는 무음으로 전환해 주시기 바랍니다.\n행사 중 사진 촬영은 자유롭게 하셔도 좋습니다.",
+      "owner": "사회자, 안내요원",
+      "materials": "",
+      "avCue": "",
+      "cue": "2~3분 간격으로 반복 안내. 내빈 착석 유도\n14:57경\n대표이사·주요 내빈 착석 여부 확인\n장애인 음악단 대기 상태, 마이크·영상 송출 최종 점검",
+      "contingency": ""
+    },
+    {
+      "title": "01. 식전 음악행사",
+      "duration": "10분 · 15:00~15:10",
+      "script": "기다려 주셔서 감사합니다.\n본 행사에 앞서, 오늘 이 자리를 축하해 주실 특별한 무대를 준비했습니다.\n장애인 음악단 ○○○의 축하 연주입니다. 큰 박수로 맞이해 주시기 바랍니다.\n\n아름다운 연주였습니다. 이어서 두 번째 곡 들려드리겠습니다.\n\n장애인 음악단 ○○○이었습니다. 다시 한번 큰 박수 부탁드립니다.\n오늘 태장의 시작을 가장 잘 표현해 준 무대가 아니었나 생각합니다.",
+      "owner": "사회자, 장애인 음악단, 음향 담당자",
+      "materials": "",
+      "avCue": "",
+      "cue": "연주 1곡 종료 후\n연주 2곡 종료 후\n음악단 퇴장 동선 확보, 무대 정리 30초 이내",
+      "contingency": ""
+    },
+    {
+      "title": "02. 제1부 개식",
+      "duration": "2분 · 15:10~15:12",
+      "script": "지금부터 농업회사법인 태장 주식회사 개소식을 시작하겠습니다.\n태장은 「장애인고용촉진 및 직업재활법」에 따른 자회사형 장애인 표준사업장으로,\n지난 7월 한국장애인고용공단으로부터 인증을 받았습니다.\n또한 경상남도로부터 경남형 장애인 동행일자리 제1호 기업으로 지정되었습니다.\n오늘 이 자리는 단순히 회사 하나가 문을 여는 자리가 아닙니다.\n장애인 근로자에게 안정적인 일자리를 만들고, 네 개 모회사와 지역사회가 함께\n그 일자리를 지켜 나가겠다는 약속을 확인하는 자리입니다.\n바쁘신 중에도 함께해 주신 내빈 여러분께 깊이 감사드립니다.",
+      "owner": "사회자",
+      "materials": "",
+      "avCue": "",
+      "cue": "",
+      "contingency": ""
+    },
+    {
+      "title": "03. 국민의례",
+      "duration": "5분 · 15:12~15:17",
+      "script": "먼저 국민의례가 있겠습니다.\n모두 자리에서 일어나 정면에 있는 국기를 향해 주시기 바랍니다.\n\n국기에 대하여 경례.\n\n바로.\n\n다음은 애국가 제창이 있겠습니다. 애국가는 1절만 부르겠습니다.\n\n이상으로 국민의례를 마치겠습니다. 모두 자리에 앉아 주시기 바랍니다.",
+      "owner": "사회자, 음원 담당자",
+      "materials": "",
+      "avCue": "",
+      "cue": "전원 기립 확인 후\n국기에 대한 맹세문 방송 → 종료 후\n반주 시작 → 제창 종료 후\n거동이 불편한 참석자는 착석 상태로 예를 갖추어도 무방함을 사전 안내\n맹세문·애국가 음원 재생 담당자와 큐 사인 사전 약속",
+      "contingency": ""
+    },
+    {
+      "title": "04. 태장 회사소개 | 김형철 전무이사",
+      "duration": "5분 · 15:17~15:22",
+      "script": "이어서 태장의 회사소개가 있겠습니다.\n태장이 왜 만들어졌고, 지금 어떤 사람들이 어떤 일을 하고 있으며,\n앞으로 어디로 가려 하는지 직접 설명드리겠습니다.\n발표에 태장 김형철 전무이사님을 모시겠습니다. 박수로 맞아 주십시오.\n\n감사합니다. 김형철 전무이사였습니다.",
+      "owner": "김형철 전무이사, 사회자, 영상 담당자",
+      "materials": "",
+      "avCue": "",
+      "cue": "발표 종료 후\nPPT 첫 슬라이드 송출 대기 상태 확인\n무선 마이크·포인터 사전 전달",
+      "contingency": ""
+    },
+    {
+      "title": "05. 대표이사 인사말 | 이영희 대표이사",
+      "duration": "4분 · 15:22~15:26",
+      "script": "다음은 대표이사 인사말 순서입니다.\n태장의 문을 열기까지 가장 앞에서 이끌어 오신 분입니다.\n농업회사법인 태장 주식회사 이영희 대표이사님의 인사말이 있겠습니다.\n큰 박수로 맞아 주시기 바랍니다.\n\n이영희 대표이사님의 인사말이었습니다. 감사합니다.",
+      "owner": "이영희 대표이사, 사회자",
+      "materials": "",
+      "avCue": "",
+      "cue": "인사말 종료 후",
+      "contingency": ""
+    },
+    {
+      "title": "06. 영상 축사",
+      "duration": "5분 · 15:26~15:31",
+      "script": "오늘 뜻깊은 자리에 함께하고 싶으셨지만 일정상 참석이 어려우신 분들께서\n영상으로 축하 인사를 보내 주셨습니다. 영상으로 만나 보시겠습니다.\n\n귀한 축하 말씀 보내 주신 ○○○님, ○○○님께 이 자리를 빌려 감사드립니다.",
+      "owner": "사회자, 영상·음향 담당자",
+      "materials": "",
+      "avCue": "",
+      "cue": "영상 송출 → 종료 후\n영상 파일 순서·자막·음량 사전 테스트 필수\n송출 사고 대비 멘트 — 『잠시 준비 관계로 순서를 바꾸어, 참석 내빈 소개를 먼저 진행하겠습니다.』",
+      "contingency": ""
+    },
+    {
+      "title": "07. 참석 내빈 소개 및 인사말",
+      "duration": "8분 · 15:31~15:39",
+      "script": "다음은 오늘 함께해 주신 내빈을 소개해 드리겠습니다.\n호명해 드리면 자리에서 일어나 인사해 주시기 바랍니다.\n박수는 소개가 모두 끝난 후에 함께 보내 주시면 감사하겠습니다.\n\n경상남도 ○○○ 도지사님.\n\n창원시 ○○○ 시장님.\n\n경상남도교육청 ○○○ 교육감님.\n\n경남경영자총협회 ○○○ 회장님.\n\n한국장애인고용공단 ○○○ ○○님.\n\n범한메카텍 주식회사 ○○○ ○○님.\n\n주식회사 삼현 ○○○ ○○님.\n\n주식회사 청우비제이 ○○○ ○○님.\n\n현대비앤지스틸 주식회사 ○○○ ○○님.\n\n그 밖에도 오늘 많은 분들이 함께해 주셨습니다.\n일일이 소개해 드리지 못한 점 양해 부탁드리며, 참석해 주신 모든 분들께\n큰 박수 부탁드립니다.\n\n이어서 주요 내빈의 인사말을 듣겠습니다.\n\n먼저 ○○○ ○○님의 인사말이 있겠습니다.\n\n다음으로 ○○○ ○○님을 모시겠습니다.\n\n귀한 말씀 주신 내빈 여러분께 다시 한번 감사드립니다.",
+      "owner": "사회자, 주요 내빈, 의전 담당자",
+      "materials": "",
+      "avCue": "",
+      "cue": "호명 — 의전 순서에 따라\n내빈 1\n종료 후 → 『감사합니다.』\n내빈 2 ~ 4 동일 반복\n전체 종료 후\n모회사는 가나다순 고정 — 범한메카텍, 삼현, 청우비제이, 현대비앤지스틸\n인사말은 최대 4명, 1인 2분 이내 — 사전에 대상자·순서 확정 및 개별 통지\n시간 초과 시 개입 멘트 — 『감사합니다. 좋은 말씀 더 듣고 싶습니다만, 다음 순서가 있어 이쯤에서 정리하겠습니다.』\n미착석·지각 내빈 발생 시 소개 순서 뒤로 조정, 인사말은 생략 가능",
+      "contingency": ""
+    },
+    {
+      "title": "08. 직원 대표 인사",
+      "duration": "2분 · 15:39~15:41",
+      "script": "다음은 오늘 이 자리의 주인공이라 할 수 있는 순서입니다.\n태장에서 매일 일하고 있는 근로자를 대표해 ○○○ 님이 인사 말씀을 전해 주시겠습니다.\n따뜻한 박수로 맞아 주시기 바랍니다.\n\n감사합니다. ○○○ 님이었습니다.\n오늘 이 회사가 무엇을 위해 만들어졌는지, 가장 분명하게 보여 주는 순간이었습니다.",
+      "owner": "직원 대표, 사회자, 지원 담당자",
+      "materials": "",
+      "avCue": "",
+      "cue": "인사 종료 후\n대본 사전 전달 및 리허설 권장. 긴장 시 사회자가 옆에서 마이크 보조\n발화가 어려울 경우 사회자가 미리 받은 인사말을 대독하는 방식으로 전환",
+      "contingency": ""
+    },
+    {
+      "title": "09. 제1부 단체사진",
+      "duration": "3분 · 15:41~15:44",
+      "script": "이어서 기념촬영이 있겠습니다.\n대표이사님과 내빈 여러분, 그리고 태장 임직원 모두 앞쪽으로 나와 주시기 바랍니다.\n\n앞줄은 앉으시고, 뒷줄은 서 주시기 바랍니다.\n가운데 자리는 내빈 여러분께서 서 주시면 감사하겠습니다.\n\n모두 정면 카메라 봐 주시기 바랍니다.\n하나, 둘, 셋! 감사합니다. 한 장 더 찍겠습니다. 하나, 둘, 셋!",
+      "owner": "사회자, 촬영팀, 진행요원",
+      "materials": "",
+      "avCue": "",
+      "cue": "정렬 유도 — 앞줄 중앙에 주요 내빈, 양옆으로 확장\n정렬 완료 후\n사전 배치도 준비, 진행요원 2명이 좌우에서 정렬 유도\n휠체어·거동 불편 참석자 동선을 앞줄 가장자리로 미리 확보",
+      "contingency": ""
+    },
+    {
+      "title": "10. 제2부 안내 및 이동",
+      "duration": "2분 · 15:44~15:46",
+      "script": "이제 제2부, 현판 제막식을 진행하겠습니다.\n제막에 함께해 주실 분들을 호명해 드리겠습니다. 호명되신 분은 현판 앞으로 이동해 주시기 바랍니다.\n\n경상남도 ○○○ 도지사님.\n\n창원시 ○○○ 시장님.\n\n경상남도교육청 ○○○ 교육감님.\n\n경남경영자총협회 ○○○ 회장님.\n\n한국장애인고용공단 ○○○ ○○님.\n\n범한메카텍, 삼현, 청우비제이, 현대비앤지스틸 네 개 모회사 관계자분들.\n\n태장 이영희 대표이사님.\n\n나머지 참석자분들께서는 현판 정면이 잘 보이는 위치에 자리해 주시기 바랍니다.\n촬영에 방해되지 않도록 진행요원의 안내를 따라 주시면 감사하겠습니다.",
+      "owner": "사회자, 의전 담당자, 이동 진행요원",
+      "materials": "",
+      "avCue": "",
+      "cue": "호명\n제막 줄 위치 사전 표시, 담당자별 손잡을 지점 지정\n실내 → 현판 위치 이동 동선에 진행요원 배치",
+      "contingency": ""
+    },
+    {
+      "title": "11. 현판 동시 제막",
+      "duration": "4분 · 15:46~15:50",
+      "script": "오늘 제막하는 현판은 모두 여섯 가지입니다.\n첫째, 경상남도가 지정한 경남형 장애인 동행일자리 제1호 지정패입니다.\n둘째, 한국장애인고용공단이 인증한 장애인 표준사업장 인증패입니다.\n그리고 태장과 함께하는 네 개 모회사, 범한메카텍 주식회사, 주식회사 삼현,\n주식회사 청우비제이, 현대비앤지스틸 주식회사의 현판입니다.\n여섯 개 현판을 동시에 제막하겠습니다.\n제막에 참여하실 분들께서는 앞에 있는 줄을 잡아 주시기 바랍니다.\n\n준비되셨습니까? 그럼 다 함께 세어 보겠습니다.\n하나, 둘, 셋!\n\n농업회사법인 태장 주식회사, 그리고 경남형 장애인 동행일자리 제1호 기업의\n공식적인 시작입니다. 큰 박수 부탁드립니다.",
+      "owner": "사회자, 제막 참여자, 촬영팀",
+      "materials": "",
+      "avCue": "",
+      "cue": "전원 파지 확인 후\n제막\n제막포 고정 상태 사전 점검 — 바람·걸림 여부\n제막 직후 3~5초 정지 요청 — 촬영 확보",
+      "contingency": ""
+    },
+    {
+      "title": "12. 유관기관 합동 촬영",
+      "duration": "2분 · 15:50~15:52",
+      "script": "이어서 합동 기념촬영을 진행하겠습니다.\n경상남도 관계자, 한국장애인고용공단 및 표준사업장 관계자,\n그리고 태장 관계자께서는 현판 앞으로 모여 주시기 바랍니다.\n\n가운데 지정패와 인증패가 가려지지 않도록 조금씩 벌려 서 주시기 바랍니다.\n정면 봐 주십시오. 하나, 둘, 셋! 한 장 더 갑니다. 하나, 둘, 셋! 감사합니다.",
+      "owner": "사회자, 촬영팀, 유관기관·태장 관계자",
+      "materials": "",
+      "avCue": "",
+      "cue": "정렬 후",
+      "contingency": ""
+    },
+    {
+      "title": "13. 모회사별 촬영 ① 범한메카텍㈜",
+      "duration": "2분 · 15:52~15:54",
+      "script": "이제 모회사별 기념촬영을 진행하겠습니다.\n회사별 현판 앞에서 회사명 현수막을 펼쳐 촬영하겠으며,\n순서는 가나다순으로 진행하겠습니다.\n먼저 범한메카텍 주식회사입니다.\n범한메카텍 관계자분들과 태장 관계자께서는 범한메카텍 현판 앞으로 이동해 주시기 바랍니다.\n\n현수막 양쪽 끝 잘 잡아 주시고, 글씨가 접히지 않게 펴 주시기 바랍니다.\n정면 봐 주십시오. 하나, 둘, 셋! 감사합니다.",
+      "owner": "사회자, 촬영팀, 범한메카텍·태장 관계자",
+      "materials": "",
+      "avCue": "",
+      "cue": "현수막 전개 확인 후",
+      "contingency": ""
+    },
+    {
+      "title": "14. 모회사별 촬영 ② 주식회사 삼현",
+      "duration": "2분 · 15:54~15:56",
+      "script": "다음은 주식회사 삼현입니다.\n삼현 관계자분들과 태장 관계자께서는 삼현 현판 앞으로 이동해 주시기 바랍니다.\n\n정면 봐 주십시오. 하나, 둘, 셋! 감사합니다.",
+      "owner": "사회자, 촬영팀, 삼현·태장 관계자",
+      "materials": "",
+      "avCue": "",
+      "cue": "현수막 전개 확인 후",
+      "contingency": ""
+    },
+    {
+      "title": "15. 모회사별 촬영 ③ 주식회사 청우비제이",
+      "duration": "2분 · 15:56~15:58",
+      "script": "다음은 주식회사 청우비제이입니다.\n청우비제이 관계자분들과 태장 관계자께서는 청우비제이 현판 앞으로 이동해 주시기 바랍니다.\n\n정면 봐 주십시오. 하나, 둘, 셋! 감사합니다.",
+      "owner": "사회자, 촬영팀, 청우비제이·태장 관계자",
+      "materials": "",
+      "avCue": "",
+      "cue": "현수막 전개 확인 후",
+      "contingency": ""
+    },
+    {
+      "title": "16. 모회사별 촬영 ④ 현대비앤지스틸㈜ 및 폐식",
+      "duration": "2분 · 15:58~16:00",
+      "script": "마지막으로 현대비앤지스틸 주식회사입니다.\n현대비앤지스틸 관계자분들과 태장 관계자께서는 현판 앞으로 이동해 주시기 바랍니다.\n\n정면 봐 주십시오. 하나, 둘, 셋! 감사합니다.\n\n이상으로 모든 순서를 마쳤습니다.\n오늘 태장은 문을 열었지만, 진짜 시작은 내일부터입니다.\n이곳에서 매일 일하게 될 근로자들이 오래 일할 수 있도록,\n함께해 주시는 모든 분들의 변함없는 관심과 응원을 부탁드립니다.\n바쁘신 중에도 끝까지 자리를 지켜 주신 내빈 여러분께 깊이 감사드립니다.\n촬영을 마치신 후에는 사업장을 자유롭게 둘러보시고,\n준비된 다과도 함께 나누어 주시기 바랍니다.\n이상으로 농업회사법인 태장 주식회사 개소식을 모두 마치겠습니다.\n안녕히 가십시오. 감사합니다.",
+      "owner": "사회자, 촬영팀, 현대비앤지스틸·태장 관계자",
+      "materials": "",
+      "avCue": "",
+      "cue": "현수막 전개 확인 후\n전체 촬영 종료 후 — 중앙으로 이동",
+      "contingency": ""
+    }
   ];
+
+  const taejangOpeningNotes="구성: 제1부 기념식 · 제2부 현판 제막식 및 기념촬영\n운영시간: 식전 음악행사 10분 + 본행사 50분(내빈 착석 안내 포함 전체 14:45~16:00)\n사회자 표기: ○○○는 확정 후 성명·직함으로 교체\n\n돌발상황 대응 멘트\n주요 내빈 지각 시\n『○○○ ○○님께서 조금 늦게 도착하실 예정입니다. 도착하시는 대로 소개해 드리겠습니다.』\n[ 도착 시 ]\n『방금 ○○○ ○○님께서 도착하셨습니다. 큰 박수로 맞아 주시기 바랍니다.』\n영상·음향 사고 시\n『잠시 기술적인 문제가 있어 순서를 조정하겠습니다. 잠시만 양해 부탁드립니다.』\n시간 지연 시 (내빈 인사말 초과 등)\n· 제1부 단체사진 정렬 시간을 단축\n· 유관기관 합동 촬영과 모회사별 촬영을 연속으로 붙여 진행\n행사 진행 중 근로자 컨디션 이상 발생 시\n『잠시 쉬어 가겠습니다.』\n· 진행요원이 조용히 인솔하고, 사회자는 다음 순서로 자연스럽게 연결\n사전 확정 필요 항목\n1. 사회자 성명\n2. 인사말 대상 내빈 4인 및 순서 (사전 통지 필수)\n3. 영상 축사 인원 및 재생 순서\n4. 직원 대표 성명 및 대독 여부\n5. 장애인 음악단 명칭 및 연주 곡목\n6. 제막 참여자 최종 명단 및 위치 배치도";
 
   const withIds=arr=>arr.map((s,i)=>({id:uid(),enabled:s.enabled!==false,completed:false,...s}));
   const seedData=()=>({version:APP_VERSION,events:[
     {id:uid(),templateKey:'iseo-first-birthday',templateRevision:2,type:'돌잔치',title:'이서 첫 돌잔치',date:'2026-07-18',time:'17:00',location:'',host:'엄마 이경진',notes:'성장 영상과 케이크·축하 노래는 생략. 돌잡이 용품 7종과 돌잡이상·쪽집게상·아차상 추첨을 진행. 공식행사 약 18~22분.',steps:withIds(birthdaySteps),createdAt:Date.now(),updatedAt:Date.now()},
-    {id:uid(),type:'개소식',title:'농업회사법인 태장 주식회사 개소식',date:'2026-08-12',time:'',location:'태장 본점',host:'',notes:'초안입니다. 행사 시간, 사회자, 내빈, 축사자, 현판식·테이프 커팅 여부를 확정한 뒤 수정하세요.',steps:withIds(openingSteps),createdAt:Date.now(),updatedAt:Date.now()}
+    {id:uid(),templateKey:'taejang-opening-20260812',templateRevision:3,type:'개소식',status:'작성 중',title:'농업회사법인 태장 주식회사 개소식',date:'2026-08-12',time:'15:00',location:'창원 신화더플렉스시티 태장㈜ 사업장',host:'○○○',notes:taejangOpeningNotes,steps:withIds(openingSteps),createdAt:Date.now(),updatedAt:Date.now()}
   ],trash:[]});
   const save=()=>{try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state.data));state.lastSaved=Date.now();state.saveError=false;updateSaveState();return true;}catch(e){state.saveError=true;updateSaveState();return false;}};
   const isLegacyIseoBirthday=e=>e&&e.title==='이서 첫 돌잔치'&&e.date==='2026-07-18'&&Array.isArray(e.steps)&&(
@@ -56,20 +220,23 @@
     e.steps.some(s=>String(s.script||'').includes('계산기는 수리 능력'))||
     e.steps.some(s=>String(s.script||'').includes('번호표를 한 장 받아'))
   );
+  const isLegacyTaejangOpening=e=>e&&e.title==='농업회사법인 태장 주식회사 개소식'&&e.date==='2026-08-12'&&Array.isArray(e.steps)&&(
+    (e.templateKey==='taejang-opening-20260812'&&e.templateRevision!==3)||
+    (!e.templateKey&&e.location==='태장 본점'&&e.steps.some(s=>s.title==='현판식 또는 테이프 커팅'))
+  );
   const migrateData=data=>{
-    if(!data||!Array.isArray(data.events))throw new Error('invalid');
-    let changed=false;
-    if(!Array.isArray(data.trash)){data.trash=[];changed=true;}
+    let changed=Core.normalizeData(data,APP_VERSION);
     data.events=data.events.map(e=>{
       if(isLegacyIseoBirthday(e)&&e.templateRevision!==2){
         changed=true;
         return {...e,templateKey:'iseo-first-birthday',templateRevision:2,notes:'성장 영상과 케이크·축하 노래는 생략. 돌잡이 용품 7종과 돌잡이상·쪽집게상·아차상 추첨을 진행. 공식행사 약 18~22분.',steps:withIds(birthdaySteps),updatedAt:Date.now()};
       }
-      if(!e.status){changed=true;return {...e,status:'작성 중'};}
+      if(isLegacyTaejangOpening(e)){
+        changed=true;
+        return {...e,templateKey:'taejang-opening-20260812',templateRevision:3,type:'개소식',status:e.status||'작성 중',title:'농업회사법인 태장 주식회사 개소식',date:'2026-08-12',time:'15:00',location:'창원 신화더플렉스시티 태장㈜ 사업장',host:e.host||'○○○',notes:taejangOpeningNotes,steps:withIds(openingSteps),updatedAt:Date.now()};
+      }
       return e;
     });
-    data.trash=data.trash.map(e=>({status:'작성 중',...e,deletedAt:e.deletedAt||Date.now()}));
-    if(data.version!==APP_VERSION){data.version=APP_VERSION;changed=true;}
     return changed;
   };
   const load=()=>{try{const raw=localStorage.getItem(STORAGE_KEY);if(raw){state.data=JSON.parse(raw);}else{state.data=seedData();save();}if(migrateData(state.data))save();}catch(e){state.data=seedData();save();}};
@@ -77,32 +244,48 @@
   const trashById=id=>state.data.trash.find(e=>e.id===id);
   const stepById=(event,id)=>event.steps.find(s=>s.id===id);
   const activeSteps=event=>event.steps.filter(s=>s.enabled!==false);
-  const dateText=v=>{if(!v)return '날짜 미정';const d=new Date(v+'T00:00:00');return `${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일`;};
+  const dateText=v=>{const parsed=Core.parseDateKey(v);return parsed?`${parsed.year}년 ${parsed.month}월 ${parsed.day}일`:'날짜 미정';};
   const timeText=v=>v?` ${v}`:'';
   const toast=(msg,action)=>{const el=$('#toast');el.innerHTML=`<span>${esc(msg)}</span>${action?` <button id="toastAction">${esc(action.label)}</button>`:''}`;el.classList.add('show');if(action)$('#toastAction').onclick=()=>{action.run();el.classList.remove('show');};clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove('show'),action?6000:1800);};
   const saveText=()=>state.saveError?'저장 실패 — 내용을 복사하거나 JSON 백업을 해 주세요.':state.lastSaved?`저장됨 · 마지막 저장 ${new Date(state.lastSaved).toLocaleTimeString('ko-KR',{hour:'numeric',minute:'2-digit'})}`:'저장됨';
   const updateSaveState=()=>{const el=$('#saveState');if(el)el.textContent=saveText();};
-  const vibrate=pattern=>{if(state.vibration&&navigator.vibrate)navigator.vibrate(pattern);};
+  const vibration=Core.createVibrationController({navigatorObject:navigator,storage:localStorage,isEnabled:()=>state.vibration,notify:message=>toast(message)});
+  const wake=Core.createWakeLockController({navigatorObject:navigator,notify:message=>toast(message)});
+  const vibrate=pattern=>vibration.send(pattern);
+  const testVibration=()=>vibration.test();
+  const loadRunPreferences=()=>{state.vibration=localStorage.getItem('cueVibration')!=='off';state.wakeEnabled=localStorage.getItem('cueWakeLock')==='on';state.fontIndex=Math.max(0,Math.min(fontLevels.length-1,parseInt(localStorage.getItem('cueFont')||'1',10)));};
   const openModal=html=>{$('#modalBody').innerHTML=html;$('#modal').classList.add('open');};
   const closeModal=()=>$('#modal').classList.remove('open');
   const shell=(title,sub,body,actions='')=>`<div class="app"><header class="topbar"><div class="brand">${esc(title)}${sub?`<small>${esc(sub)}</small>`:''}</div><div class="top-actions">${actions}</div></header><main class="content">${body}</main></div>`;
   const setView=(view,eventId=null)=>{stopRunTimer();releaseWake();state.view=view;state.eventId=eventId;window.scrollTo(0,0);render();};
 
   function renderHome(){
-    const query=(state.query||'').toLowerCase(), filter=state.filter||'all', status=state.statusFilter||'all', order=state.sort||'updated';
-    const now=today();let events=state.data.events.filter(e=>!query||[e.title,e.type,e.templateKey,e.date].join(' ').toLowerCase().includes(query));
-    events=events.filter(e=>filter==='all'||(filter==='upcoming'&&e.date&&e.date>=now)||(filter==='past'&&e.date&&e.date<now)||(filter==='undated'&&!e.date));
-    events=events.filter(e=>status==='all'||e.status===status);
-    events.sort((a,b)=>order==='dateAsc'?String(a.date||'9999').localeCompare(String(b.date||'9999')):order==='dateDesc'?String(b.date||'').localeCompare(String(a.date||'')):order==='title'?String(a.title).localeCompare(String(b.title),'ko'):Number(b.updatedAt||0)-Number(a.updatedAt||0));
-    const cards=events.map(e=>{const enabled=activeSteps(e).length,total=e.steps.length,mins=e.steps.map(s=>Number(String(s.duration||'').match(/\d+/)?.[0]||0)).reduce((a,b)=>a+b,0);return `<article class="event-card"><div class="card-top"><span class="tag">${esc(e.type||'행사')}</span><span class="status-tag">${esc(e.status||'작성 중')}</span></div><h3>${esc(e.title)}</h3><div class="meta">${esc(dateText(e.date)+timeText(e.time))}</div><div class="stats">순서 ${enabled}개${enabled!==total?` · 숨김 ${total-enabled}개`:''}${mins?` · 약 ${mins}분`:''}<br>마지막 수정 ${new Date(e.updatedAt||Date.now()).toLocaleDateString('ko-KR')}</div><div class="card-actions"><button class="btn small soft" data-action="edit" data-id="${e.id}">열기</button><button class="btn small primary" data-action="run" data-id="${e.id}">진행</button><button class="btn small" aria-label="${esc(e.title)} 더보기" data-more="${e.id}">더보기</button></div></article>`}).join('');
+    const reference=new Date(),filter=state.filter||'all',status=state.statusFilter||'all',order=state.sort||'dday';
+    const filtered=Core.filterEvents(state.data.events,{query:state.query,dateFilter:filter,statusFilter:status,referenceDate:reference});
+    const events=Core.sortEvents(filtered,order,reference);
+    const nearest=Core.sortEvents(state.data.events.filter(event=>['today','upcoming'].includes(Core.classifyEventDate(event,reference))),'dday',reference)[0];
+    const cards=events.map(e=>{const enabled=activeSteps(e).length,total=e.steps.length,mins=e.steps.map(s=>Number(String(s.duration||'').match(/\d+/)?.[0]||0)).reduce((a,b)=>a+b,0),dday=Core.calculateDday(e.date,reference);return Core.renderEventCard({event:e,enabled,total,minutes:mins,dateLabel:dateText(e.date)+timeText(e.time),lastModified:new Date(e.updatedAt||Date.now()).toLocaleDateString('ko-KR'),dday,highlight:e.id===nearest?.id&&dday.days<=3});}).join('');
     const empty=state.data.events.length===0?`<div class="empty"><b>아직 만든 행사가 없습니다.</b><br>기본양식을 선택하거나 빈 큐시트로 새 행사를 만들어 보세요.<br><br><button class="btn primary" id="emptyNewBtn">새 행사 만들기</button> <button class="btn" id="emptyImportBtn">백업 파일 불러오기</button></div>`:`<div class="empty">검색·필터 조건에 맞는 행사가 없습니다.</div>`;
-    const body=`<section class="hero"><h1>여러 행사에 계속 쓰는<br>모바일 큐시트</h1><p>행사 대본을 만들고, 한 장씩 넘기며 진행하고, 파일로 백업하세요.</p><div class="hero-actions"><button class="btn" id="newEventBtn">＋ 새 행사</button><button class="btn ghost" id="importBtn">백업 불러오기</button></div></section><div class="section-head"><h2>내 행사</h2><span>${state.data.events.length}개 저장됨</span></div><section class="panel list-controls"><input id="eventSearch" placeholder="행사명·종류·날짜 검색" value="${esc(state.query||'')}" aria-label="행사 검색"><div class="control-row"><select id="eventFilter" aria-label="날짜 필터"><option value="all">전체</option><option value="upcoming">예정 행사</option><option value="past">지난 행사</option><option value="undated">날짜 미정</option></select><select id="statusFilter" aria-label="상태 필터"><option value="all">모든 상태</option>${['작성 중','준비 완료','진행 완료','보관'].map(x=>`<option ${status===x?'selected':''}>${x}</option>`).join('')}</select><select id="eventSort" aria-label="정렬"><option value="updated">최근 수정순</option><option value="dateAsc">행사일 빠른순</option><option value="dateDesc">행사일 늦은순</option><option value="title">제목 가나다순</option></select></div></section>${cards?`<div class="grid">${cards}</div>`:empty}<div class="section-head"><h2>데이터 관리</h2><button class="btn small" id="trashBtn">휴지통 ${state.data.trash.length}</button></div><div class="panel"><div class="split-actions"><button class="btn small" id="exportAllBtn">전체 백업 저장</button><button class="btn small" id="installHelpBtn">홈 화면 설치 안내</button></div><p class="notice" style="margin-top:12px">행사 내용은 현재 휴대전화 브라우저에 저장됩니다. 중요한 수정 후에는 반드시 백업 파일을 저장해 두세요.</p></div><input class="hidden" type="file" id="importFile" accept="application/json,.json">`;
+    const activeCount=(state.query?1:0)+(filter!=='all'?1:0)+(status!=='all'?1:0)+(order!=='dday'?1:0);
+    const searchPanel=state.searchOpen?`<div class="filter-scrim" id="filterScrim"></div><section class="filter-panel" id="searchPanel" aria-label="검색과 필터"><div class="filter-head"><h2>검색·필터·정렬</h2><button type="button" class="modal-close" id="closeSearch" aria-label="검색 패널 닫기">×</button></div><label class="field"><span>행사 검색</span><input id="eventSearch" placeholder="행사명·종류·날짜" value="${esc(state.query||'')}"></label><div class="control-row"><label class="field"><span>날짜 구분</span><select id="eventFilter"><option value="all">전체</option><option value="upcoming">예정</option><option value="today">오늘</option><option value="past">지난 행사</option><option value="undated">날짜 미정</option></select></label><label class="field"><span>상태</span><select id="statusFilter"><option value="all">전체</option>${['작성 중','준비 완료','진행 완료','보관'].map(x=>`<option ${status===x?'selected':''}>${x}</option>`).join('')}</select></label><label class="field"><span>정렬</span><select id="eventSort"><option value="dday">D-Day 가까운 순</option><option value="updated">최근 수정순</option><option value="dateAsc">행사일 빠른순</option><option value="dateDesc">행사일 늦은순</option><option value="title">제목 가나다순</option></select></label></div><button type="button" class="btn small" id="resetFilters">초기화</button></section>`:'';
+    const body=`<section class="home-heading"><div><h1>내 큐시트</h1><p>${state.data.events.length}개 행사${activeCount?` · 필터 ${activeCount}개 적용`:''}</p></div><div class="home-actions"><button type="button" class="iconbtn" id="optionsBtn" aria-label="진행 옵션 열기">⚙</button><button type="button" class="iconbtn filter-button ${activeCount?'has-filter':''}" id="searchToggle" aria-label="검색·필터 열기">⌕${activeCount?`<i>${activeCount}</i>`:''}</button><button type="button" class="btn primary" id="newEventBtn">＋ 새 행사</button></div></section>${searchPanel}${cards?`<div class="grid event-grid">${cards}</div>`:empty}<section class="home-management"><button class="btn small" id="importBtn">백업 불러오기</button><button class="btn small" id="exportAllBtn">전체 백업</button><button class="btn small" id="trashBtn">휴지통 ${state.data.trash.length}</button><button class="btn small" id="installHelpBtn">설치 안내</button></section><input class="hidden" type="file" id="importFile" accept="application/json,.json">`;
     $('#root').innerHTML=shell('행사 큐시트',`버전 ${APP_VERSION}`,body,'');
-    $('#eventFilter').value=filter;$('#eventSort').value=order;
-    const rerender=()=>renderHome();$('#eventSearch').oninput=e=>{state.query=e.target.value;rerender();};$('#eventFilter').onchange=e=>{state.filter=e.target.value;rerender();};$('#statusFilter').onchange=e=>{state.statusFilter=e.target.value;rerender();};$('#eventSort').onchange=e=>{state.sort=e.target.value;rerender();};
+    if(state.searchOpen){$('#eventFilter').value=filter;$('#eventSort').value=order;$('#eventSearch').oninput=e=>{state.query=e.target.value;renderHome();$('#eventSearch')?.focus();};$('#eventFilter').onchange=e=>{state.filter=e.target.value;renderHome();};$('#statusFilter').onchange=e=>{state.statusFilter=e.target.value;renderHome();};$('#eventSort').onchange=e=>{state.sort=e.target.value;renderHome();};$('#closeSearch').onclick=$('#filterScrim').onclick=()=>{state.searchOpen=false;renderHome();};$('#resetFilters').onclick=()=>{state.query='';state.filter='all';state.statusFilter='all';state.sort='dday';renderHome();};}
+    $('#searchToggle').onclick=()=>{state.searchOpen=!state.searchOpen;renderHome();if(state.searchOpen)$('#eventSearch')?.focus();};
+    $('#optionsBtn').onclick=showOptionsModal;
     $('#newEventBtn').onclick=showNewEventModal;$('#importBtn').onclick=()=>$('#importFile').click();$('#emptyNewBtn')?.addEventListener('click',showNewEventModal);$('#emptyImportBtn')?.addEventListener('click',()=>$('#importFile').click());$('#importFile').onchange=importBackup;$('#exportAllBtn').onclick=exportAll;$('#installHelpBtn').onclick=showInstallHelp;$('#trashBtn').onclick=renderTrash;
-    $('#resetAppBtn').onclick=()=>{if(confirm('현재 저장된 모든 행사와 수정 내용이 사라집니다. 예시 데이터로 초기화할까요?')){state.data=seedData();save();render();toast('초기화했습니다.');}};
-    document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>setView(b.dataset.action==='run'?'run':'editor',b.dataset.id));document.querySelectorAll('[data-more]').forEach(b=>b.onclick=()=>showEventMenu(b.dataset.more));
+    const resetButton=$('#resetAppBtn');if(resetButton)resetButton.onclick=()=>{if(confirm('현재 저장된 모든 행사와 수정 내용이 사라집니다. 예시 데이터로 초기화할까요?')){state.data=seedData();save();render();toast('초기화했습니다.');}};
+  }
+
+  function showOptionsModal(){
+    loadRunPreferences();
+    const wakeSupported=wake.supported();
+    openModal(`<div class="modal-head"><h2>진행 옵션</h2><button type="button" class="modal-close" id="modalClose" aria-label="진행 옵션 닫기">×</button></div><div class="settings-list"><label class="field"><span>진동 사용</span><select id="optionVibration"><option value="on" ${state.vibration?'selected':''}>켜기</option><option value="off" ${!state.vibration?'selected':''}>끄기</option></select></label><button type="button" class="btn" id="optionVibrationTest">진동 테스트</button><label class="field"><span>화면 꺼짐 방지</span><select id="optionWake" ${wakeSupported?'':'disabled'}><option value="off" ${!state.wakeEnabled?'selected':''}>끄기</option><option value="on" ${state.wakeEnabled?'selected':''}>켜기</option></select></label>${wakeSupported?'':'<p class="setting-help">이 기기 또는 브라우저에서는 화면 꺼짐 방지를 지원하지 않습니다.</p>'}<label class="field"><span>기본 글자 크기</span><select id="optionFont">${['작게','기본','크게','매우 크게'].map((label,index)=>`<option value="${index}" ${state.fontIndex===index?'selected':''}>${label}</option>`).join('')}</select></label></div><div class="modal-actions"><button type="button" class="btn primary" id="optionsDone">완료</button></div>`);
+    $('#modalClose').onclick=$('#optionsDone').onclick=closeModal;
+    $('#optionVibration').onchange=event=>{state.vibration=event.target.value==='on';vibration.setEnabled(state.vibration);toast(`진동을 ${state.vibration?'켰습니다.':'껐습니다.'}`);};
+    $('#optionVibrationTest').onclick=testVibration;
+    $('#optionWake').onchange=event=>{state.wakeEnabled=event.target.value==='on';localStorage.setItem('cueWakeLock',state.wakeEnabled?'on':'off');toast(`화면 꺼짐 방지를 ${state.wakeEnabled?'켰습니다.':'껐습니다.'}`);};
+    $('#optionFont').onchange=event=>{state.fontIndex=Number(event.target.value);localStorage.setItem('cueFont',String(state.fontIndex));toast('기본 글자 크기를 저장했습니다.');};
   }
 
   function showNewEventModal(){
@@ -121,18 +304,14 @@
     };
     draw();
   }
-  function showEventMenu(id){
-    const e=eventById(id);if(!e)return;
-    openModal(`<div class="modal-head"><h2>${esc(e.title)}</h2><button class="modal-close" id="modalClose" aria-label="닫기">×</button></div><div class="action-menu"><button class="btn" id="menuEdit">열기</button><button class="btn" id="menuRun">진행 화면 시작</button><button class="btn" id="menuCopy">복제</button><button class="btn" id="menuExport">JSON 내보내기</button><label class="field"><span>상태 변경</span><select id="menuStatus">${['작성 중','준비 완료','진행 완료','보관'].map(s=>`<option ${e.status===s?'selected':''}>${s}</option>`).join('')}</select></label><button class="btn danger" id="menuTrash">휴지통으로 이동</button></div>`);
-    $('#modalClose').onclick=closeModal;$('#menuEdit').onclick=()=>{closeModal();setView('editor',id);};$('#menuRun').onclick=()=>{closeModal();setView('run',id);};$('#menuCopy').onclick=()=>duplicateEvent(id,true);$('#menuExport').onclick=()=>exportEvent(e);$('#menuStatus').onchange=ev=>{e.status=ev.target.value;e.updatedAt=Date.now();save();toast('행사 상태를 변경했습니다.');};$('#menuTrash').onclick=()=>confirmTrash(id);
-  }
+  function requestDeleteEvent(id){confirmTrash(id);}
   function confirmTrash(id){
-    const e=eventById(id);if(!e)return;openModal(`<div class="modal-head"><h2>휴지통으로 이동</h2><button class="modal-close" id="modalClose" aria-label="닫기">×</button></div><p>“${esc(e.title)}”을 삭제하시겠습니까?<br>삭제한 행사는 휴지통으로 이동하며 복구할 수 있습니다.</p><div class="modal-actions"><button class="btn" id="cancelTrash">취소</button><button class="btn danger" id="doTrash">휴지통으로 이동</button></div>`);$('#modalClose').onclick=$('#cancelTrash').onclick=closeModal;$('#doTrash').onclick=()=>moveToTrash(id);
+    const e=eventById(id);if(!e)return;openModal(Core.renderDeleteConfirmation(e));$('#modalClose').onclick=$('#cancelTrash').onclick=closeModal;$('#doTrash').onclick=()=>moveToTrash(id);$('#cancelTrash').focus();
   }
   function moveToTrash(id){
-    const i=state.data.events.findIndex(e=>e.id===id);if(i<0)return;const [e]=state.data.events.splice(i,1);e.deletedAt=Date.now();state.data.trash.unshift(e);save();closeModal();setView('home');toast('행사를 휴지통으로 이동했습니다.',{label:'실행 취소',run:()=>restoreFromTrash(id)});
+    const moved=Core.moveEventToTrash(state.data,id);if(!moved)return;save();closeModal();setView('home');toast('행사를 휴지통으로 이동했습니다.',{label:'실행 취소',run:()=>restoreFromTrash(id)});
   }
-  function restoreFromTrash(id){const i=state.data.trash.findIndex(e=>e.id===id);if(i<0)return;const [e]=state.data.trash.splice(i,1);delete e.deletedAt;e.updatedAt=Date.now();state.data.events.unshift(e);save();render();toast('행사를 복원했습니다.');}
+  function restoreFromTrash(id){const restored=Core.restoreEventFromTrash(state.data,id);if(!restored)return;save();render();toast('행사를 복원했습니다.');}
   function renderTrash(){
     const rows=state.data.trash.map(e=>`<article class="event-card"><span class="tag">휴지통 · ${esc(e.type||'행사')}</span><h3>${esc(e.title)}</h3><div class="meta">삭제일 ${new Date(e.deletedAt||Date.now()).toLocaleDateString('ko-KR')}</div><div class="card-actions"><button class="btn small soft" data-restore="${e.id}">복원</button><button class="btn small danger" data-permanent="${e.id}">영구 삭제</button></div></article>`).join('');
     const body=`<div class="editor-actions"><button class="btn" id="backHome">← 내 행사</button>${state.data.trash.length?'<button class="btn danger" id="emptyTrash">휴지통 비우기</button>':''}</div><div class="section-head"><h2>휴지통</h2><span>${state.data.trash.length}개</span></div>${rows?`<div class="grid">${rows}</div>`:'<div class="empty">휴지통이 비어 있습니다.</div>'}`;
@@ -142,7 +321,7 @@
   function confirmEmptyTrash(){openModal(`<div class="modal-head"><h2>휴지통 비우기</h2><button class="modal-close" id="modalClose" aria-label="닫기">×</button></div><p><b>이 작업은 되돌릴 수 없습니다.</b><br>휴지통의 모든 행사를 영구 삭제하시겠습니까?</p><div class="modal-actions"><button class="btn" id="cancelEmpty">취소</button><button class="btn danger" id="doEmpty">전체 비우기</button></div>`);$('#modalClose').onclick=$('#cancelEmpty').onclick=closeModal;$('#doEmpty').onclick=()=>{state.data.trash=[];save();closeModal();renderTrash();toast('휴지통을 비웠습니다.');};}
   function createFromTemplate(key){
     const template=templates.find(t=>t.key===key);
-    const event={id:uid(),templateKey:template?.key||'blank',templateRevision:template?.revision||1,type:template?.type||'일반 행사',status:'작성 중',title:template?.title||'새 행사',date:today(),time:'',location:'',host:'',notes:'',steps:withIds(clone(template?.steps||[])),createdAt:Date.now(),updatedAt:Date.now()};
+    const event=Core.createEventFromTemplate(template,{id:uid,stepId:uid,date:today()});
     state.data.events.unshift(event);save();closeModal();setView('editor',event.id);
   }
   function showCopyPicker(){
@@ -175,22 +354,21 @@
   }
 
   function renderRun(){
-    const e=eventById(state.eventId);if(!e){setView('home');return;}state.runActiveSteps=activeSteps(e);if(!state.runActiveSteps.length){alert('사용 중인 진행 순서가 없습니다.');setView('editor',e.id);return;}const saved=parseInt(localStorage.getItem('cueRunIndex.'+e.id)||'0',10);state.runIndex=Math.max(0,Math.min(saved,state.runActiveSteps.length-1));state.vibration=localStorage.getItem('cueVibration')!=='off';state.fontIndex=parseInt(localStorage.getItem('cueFont')||'1',10);state.fontIndex=Math.max(0,Math.min(fontLevels.length-1,state.fontIndex));
-    $('#root').innerHTML=`<div class="run"><header class="run-top"><div class="run-row"><div class="run-title"><b>${esc(e.title)}</b><span id="elapsed">00:00 · ${esc(e.host||'사회자 미정')}</span></div><div class="run-actions"><button class="iconbtn" id="runListBtn">목록</button><button class="iconbtn" id="fontRunBtn">A＋</button><button class="iconbtn ${state.vibration?'active':''}" id="vibeRunBtn">진동</button><button class="iconbtn" id="wakeRunBtn">화면</button><button class="iconbtn" id="exitRunBtn">종료</button></div></div><div class="progress"><i id="runProgress"></i></div></header><main class="run-stage" id="runStage"><div class="run-track" id="runTrack">${state.runActiveSteps.map((s,i)=>`<section class="run-slide"><article class="run-card"><div class="run-meta"><span class="run-num">${String(i+1).padStart(2,'0')}</span><span class="run-duration">${esc(s.duration||'')}</span></div><h1>${esc(s.title)}</h1><div class="run-script">${nl(s.script||'')}</div>${s.owner?`<div class="run-cue"><b>담당</b><br>${nl(s.owner)}</div>`:''}${s.materials?`<div class="run-cue"><b>준비물</b><br>${nl(s.materials)}</div>`:''}${s.avCue?`<div class="run-cue"><b>음향·영상·조명 큐</b><br>${nl(s.avCue)}</div>`:''}${s.cue?`<div class="run-cue"><b>진행 메모</b><br>${nl(s.cue)}</div>`:''}${s.contingency?`<div class="run-cont"><b>돌발상황·대체 멘트</b><br>${nl(s.contingency)}</div>`:''}</article></section>`).join('')}</div></main><footer class="run-foot"><div class="run-counter" id="runCounter"></div><div class="run-nav"><button id="runPrev">◀ 이전</button><button id="runDone">완료 표시</button><button class="next" id="runNext">다음 ▶</button></div></footer></div><div class="run-list" id="runList"><section class="run-list-sheet"><div class="modal-head"><h2>전체 진행 순서</h2><button class="modal-close" id="closeRunList">×</button></div><div id="runListItems"></div></section></div>`;
+    const e=eventById(state.eventId);if(!e){setView('home');return;}state.runActiveSteps=activeSteps(e);if(!state.runActiveSteps.length){alert('사용 중인 진행 순서가 없습니다.');setView('editor',e.id);return;}const saved=parseInt(localStorage.getItem('cueRunIndex.'+e.id)||'0',10);state.runIndex=Math.max(0,Math.min(saved,state.runActiveSteps.length-1));loadRunPreferences();
+    $('#root').innerHTML=`<div class="run"><header class="run-top"><div class="run-row"><div class="run-title"><b>${esc(e.title)}</b><span id="elapsed">00:00 · ${esc(e.host||'사회자 미정')}</span></div><div class="run-actions"><button class="iconbtn" id="runListBtn">목록</button><button class="iconbtn" id="fontRunBtn">A＋</button><button class="iconbtn" id="exitRunBtn">종료</button></div></div><div class="progress"><i id="runProgress"></i></div></header><main class="run-stage" id="runStage"><div class="run-track" id="runTrack">${state.runActiveSteps.map((s,i)=>`<section class="run-slide"><article class="run-card"><div class="run-meta"><span class="run-num">${String(i+1).padStart(2,'0')}</span><span class="run-duration">${esc(s.duration||'')}</span></div><h1>${esc(s.title)}</h1><div class="run-script">${nl(s.script||'')}</div>${s.owner?`<div class="run-cue"><b>담당</b><br>${nl(s.owner)}</div>`:''}${s.materials?`<div class="run-cue"><b>준비물</b><br>${nl(s.materials)}</div>`:''}${s.avCue?`<div class="run-cue"><b>음향·영상·조명 큐</b><br>${nl(s.avCue)}</div>`:''}${s.cue?`<div class="run-cue"><b>진행 메모</b><br>${nl(s.cue)}</div>`:''}${s.contingency?`<div class="run-cont"><b>돌발상황·대체 멘트</b><br>${nl(s.contingency)}</div>`:''}</article></section>`).join('')}</div></main><footer class="run-foot"><div class="run-counter" id="runCounter"></div><div class="run-nav"><button id="runPrev">◀ 이전</button><button id="runDone">완료 표시</button><button class="next" id="runNext">다음 ▶</button></div></footer></div><div class="run-list" id="runList"><section class="run-list-sheet"><div class="modal-head"><h2>전체 진행 순서</h2><button class="modal-close" id="closeRunList">×</button></div><div id="runListItems"></div></section></div>`;
     document.documentElement.style.setProperty('--run-fs',fontLevels[state.fontIndex]);$('#runListItems').innerHTML=state.runActiveSteps.map((s,i)=>`<button class="run-list-item" data-run-index="${i}"><span class="run-list-num">${i+1}</span><span><b>${esc(s.title)}</b><span>${esc(s.duration||'')}${s.completed?' · 완료':''}</span></span></button>`).join('');
     $('#exitRunBtn').onclick=()=>setView('editor',e.id);$('#runPrev').onclick=()=>goRun(state.runIndex-1,'prev');$('#runNext').onclick=()=>goRun(state.runIndex+1,'next');$('#runDone').onclick=()=>{const s=state.runActiveSteps[state.runIndex];s.completed=!s.completed;save();updateRunUI();vibrate(s.completed?70:[30,45,30]);};$('#runListBtn').onclick=()=>$('#runList').classList.add('open');$('#closeRunList').onclick=()=>$('#runList').classList.remove('open');$('#runList').onclick=ev=>{if(ev.target.id==='runList')ev.currentTarget.classList.remove('open');};document.querySelectorAll('[data-run-index]').forEach(b=>b.onclick=()=>{goRun(+b.dataset.runIndex,'jump');$('#runList').classList.remove('open');});
-    $('#vibeRunBtn').onclick=()=>{state.vibration=!state.vibration;localStorage.setItem('cueVibration',state.vibration?'on':'off');updateRunUI();if(state.vibration)vibrate(70);};$('#fontRunBtn').onclick=()=>{state.fontIndex=(state.fontIndex+1)%fontLevels.length;localStorage.setItem('cueFont',state.fontIndex);document.documentElement.style.setProperty('--run-fs',fontLevels[state.fontIndex]);$('#fontRunBtn').textContent=state.fontIndex===fontLevels.length-1?'A−':'A＋';};$('#wakeRunBtn').onclick=toggleWake;
+    $('#fontRunBtn').onclick=()=>{state.fontIndex=(state.fontIndex+1)%fontLevels.length;localStorage.setItem('cueFont',String(state.fontIndex));document.documentElement.style.setProperty('--run-fs',fontLevels[state.fontIndex]);$('#fontRunBtn').textContent=state.fontIndex===fontLevels.length-1?'A−':'A＋';};
     const stage=$('#runStage');stage.addEventListener('touchstart',ev=>{const t=ev.touches[0];touchStart={x:t.clientX,y:t.clientY};},{passive:true});stage.addEventListener('touchend',ev=>{if(!touchStart)return;const t=ev.changedTouches[0],dx=t.clientX-touchStart.x,dy=t.clientY-touchStart.y;touchStart=null;if(Math.abs(dx)>55&&Math.abs(dx)>Math.abs(dy)*1.25)goRun(state.runIndex+(dx<0?1:-1),dx<0?'next':'prev');},{passive:true});
-    document.onkeydown=runKeyHandler;startRunTimer();goRun(state.runIndex,'init');
+    document.onkeydown=runKeyHandler;startRunTimer();goRun(state.runIndex,'init');if(state.wakeEnabled)void wake.request(true);
   }
   function goRun(target,direction){const old=state.runIndex,n=Math.max(0,Math.min(state.runActiveSteps.length-1,target));if(n===old&&direction!=='init'){vibrate([110,65,110]);toast(n===0?'첫 순서입니다.':'마지막 순서입니다.');return;}state.runIndex=n;localStorage.setItem('cueRunIndex.'+state.eventId,n);$('#runTrack').style.transform=`translateX(-${n*100}%)`;document.querySelectorAll('.run-slide')[n].scrollTop=0;if(direction==='prev'||n<old)vibrate([35,45,35]);else if(direction!=='init')vibrate(55);updateRunUI();}
-  function updateRunUI(){const n=state.runIndex,total=state.runActiveSteps.length,s=state.runActiveSteps[n];$('#runProgress').style.width=`${total===1?100:n/(total-1)*100}%`;$('#runCounter').textContent=`${n+1} / ${total} · ${s.title}`;$('#runPrev').disabled=n===0;$('#runNext').disabled=n===total-1;$('#runDone').textContent=s.completed?'✓ 완료됨':'완료 표시';$('#runDone').classList.toggle('next',s.completed);$('#vibeRunBtn').classList.toggle('active',state.vibration);$('#vibeRunBtn').textContent=state.vibration?'진동ON':'진동OFF';$('#fontRunBtn').textContent=state.fontIndex===fontLevels.length-1?'A−':'A＋';document.querySelectorAll('.run-list-item').forEach((el,i)=>{el.classList.toggle('active',i===n);const sp=el.querySelector('span span');if(sp)sp.textContent=(state.runActiveSteps[i].duration||'')+(state.runActiveSteps[i].completed?' · 완료':'');});}
+  function updateRunUI(){const n=state.runIndex,total=state.runActiveSteps.length,s=state.runActiveSteps[n];$('#runProgress').style.width=`${total===1?100:n/(total-1)*100}%`;$('#runCounter').textContent=`${n+1} / ${total} · ${s.title}`;$('#runPrev').disabled=n===0;$('#runNext').disabled=n===total-1;$('#runDone').textContent=s.completed?'✓ 완료됨':'완료 표시';$('#runDone').classList.toggle('next',s.completed);$('#fontRunBtn').textContent=state.fontIndex===fontLevels.length-1?'A−':'A＋';document.querySelectorAll('.run-list-item').forEach((el,i)=>{el.classList.toggle('active',i===n);const sp=el.querySelector('span span');if(sp)sp.textContent=(state.runActiveSteps[i].duration||'')+(state.runActiveSteps[i].completed?' · 완료':'');});}
   function runKeyHandler(ev){if(state.view!=='run')return;if(ev.key==='ArrowRight'||ev.key==='PageDown')goRun(state.runIndex+1,'next');if(ev.key==='ArrowLeft'||ev.key==='PageUp')goRun(state.runIndex-1,'prev');}
   function startRunTimer(){runSeconds=0;updateElapsed();runTimer=setInterval(()=>{runSeconds++;updateElapsed();},1000);}
   function stopRunTimer(){if(runTimer){clearInterval(runTimer);runTimer=null;}document.onkeydown=null;}
   function updateElapsed(){const el=$('#elapsed');if(!el)return;const m=Math.floor(runSeconds/60),s=runSeconds%60;const e=eventById(state.eventId);el.textContent=`${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')} · ${e?.host||'사회자 미정'}`;}
-  async function toggleWake(){const b=$('#wakeRunBtn');try{if(wakeLock){await wakeLock.release();wakeLock=null;b.classList.remove('active');b.textContent='화면';return;}if(!('wakeLock'in navigator))throw new Error();wakeLock=await navigator.wakeLock.request('screen');b.classList.add('active');b.textContent='화면ON';wakeLock.addEventListener('release',()=>{if($('#wakeRunBtn')){$('#wakeRunBtn').classList.remove('active');$('#wakeRunBtn').textContent='화면';}});}catch(e){alert('이 브라우저에서는 화면 꺼짐 방지를 켤 수 없습니다. 휴대전화의 화면 자동 꺼짐 시간을 길게 설정해 주세요.');}}
-  async function releaseWake(){try{if(wakeLock)await wakeLock.release();}catch(e){}wakeLock=null;}
+  async function releaseWake(){await wake.release();}
 
   function exportAll(){downloadJson(`행사큐시트_전체백업_${today()}.json`,state.data);}
   function exportEvent(e){downloadJson(`${safeFilename(e.title)}_${e.date||today()}.json`,{version:APP_VERSION,events:[e]});}
@@ -202,7 +380,7 @@
 
   function render(){if(state.view==='home')renderHome();else if(state.view==='editor')renderEditor();else if(state.view==='script')renderScript();else if(state.view==='run')renderRun();}
   $('#modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal();});
-  window.addEventListener('beforeunload',ev=>{save();if(state.saveError){ev.preventDefault();ev.returnValue='';}});document.addEventListener('visibilitychange',async()=>{if(document.visibilityState==='visible'&&state.view==='run'&&$('#wakeRunBtn')?.classList.contains('active')&&'wakeLock'in navigator){try{wakeLock=await navigator.wakeLock.request('screen');}catch(e){}}});
+  window.addEventListener('beforeunload',ev=>{save();if(state.saveError){ev.preventDefault();ev.returnValue='';}});document.addEventListener('visibilitychange',async()=>{if(state.view!=='run')return;if(document.visibilityState==='hidden')await wake.release();else if(state.wakeEnabled)await wake.request(true);});
   if('serviceWorker'in navigator&&location.protocol.startsWith('http'))window.addEventListener('load',async()=>{
     try{
       const reg=await navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'});
@@ -213,5 +391,11 @@
       });
     }catch(e){}
   });
-  load();render();
+  Core.bindEventCardActions($('#root'),{
+    edit:id=>setView('editor',id),run:id=>setView('run',id),delete:requestDeleteEvent,
+    duplicate:id=>duplicateEvent(id,false),export:id=>{const event=eventById(id);if(event)exportEvent(event);},
+    status:(id,value)=>{const event=eventById(id);if(!event)return;event.status=value;event.updatedAt=Date.now();save();renderHome();toast('행사 상태를 변경했습니다.');}
+  });
+  document.addEventListener('keydown',event=>{if(event.key!=='Escape')return;if($('#modal').classList.contains('open')){closeModal();return;}if(state.view==='home'&&state.searchOpen){state.searchOpen=false;renderHome();}});
+  loadRunPreferences();load();render();
 })();
