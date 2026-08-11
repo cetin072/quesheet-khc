@@ -194,8 +194,9 @@ test('태장 개소식 8월 11일 최종 시나리오는 16개 순서와 확정 
   assert.match(source,/time:'15:00'/);
   assert.match(source,/창원 신화더플렉스시티 태장㈜ 사업장/);
   assert.match(source,/templateKey:'taejang-opening-20260812'/);
-  assert.match(source,/templateRevision:4/);
+  assert.match(source,/templateRevision:5/);
   assert.match(source,/status:'준비 완료'/);
+  for(const value of ['[진행] 장애인 음악단 축하연주 2곡','[진행] 경상남도지사 영상 축사 상영','[진행] 김종양 국회의원 축사 대독 / 보좌관','[진행] 현판 동시 제막','[진행] 현대비앤지스틸㈜ 단체촬영'])assert.ok(openingBlock.includes(value));
 });
 
 test('기존 태장 개소식 초안만 최종 시나리오로 갱신하는 마이그레이션이 있다',async()=>{
