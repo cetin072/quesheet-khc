@@ -1,4 +1,4 @@
-const CACHE_NAME = 'event-cue-studio-v1.10.1-20260805';
+const CACHE_NAME = 'event-cue-studio-v1.10.2-20260811';
 const APP_SHELL = [
   '/',
   '/index.html',
