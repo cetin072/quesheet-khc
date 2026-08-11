@@ -2,10 +2,10 @@ const CACHE_NAME = 'event-cue-studio-v1.10.3-20260811';
 const APP_SHELL = [
   '/',
   '/index.html',
-  '/assets/app-v1.10.1.css',
-  '/assets/templates-v1.10.1.js',
-  '/assets/app-core-v1.10.1.js',
-  '/assets/app-v1.10.1.js',
+  '/assets/app-v1.10.3.css',
+  '/assets/templates-v1.10.3.js',
+  '/assets/app-core-v1.10.3.js',
+  '/assets/app-v1.10.3.js',
   '/manifest.webmanifest',
   '/icon-192.png',
   '/icon-512.png',
@@ -53,7 +53,7 @@ self.addEventListener('fetch', event => {
   }
 
   // 버전 파일은 캐시 우선, 나머지는 네트워크 우선으로 갱신 안정성을 높입니다.
-  const immutableAsset = /\/assets\/(app-v1\.10\.0\.(css|js)|app-core-v1\.10\.0\.js|templates-v1\.10\.0\.js)$|\/icon-(192|512)\.png$|\/og-thumbnail-v1\.5\.jpg$/.test(url.pathname);
+  const immutableAsset = /\/assets\/(app-v1\.10\.3\.(css|js)|app-core-v1\.10\.3\.js|templates-v1\.10\.3\.js)$|\/icon-(192|512)\.png$|\/og-thumbnail-v1\.5\.jpg$/.test(url.pathname);
   if (immutableAsset) {
     event.respondWith(
       caches.match(request).then(cached => cached || fetch(request).then(response => {
