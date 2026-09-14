@@ -15,6 +15,11 @@
 11. 기능 수정 후 `npm run test`와 `npm run build`를 실행합니다.
 12. 테스트 실패 상태에서는 작업 완료로 보고하지 않습니다.
 13. 작업 완료 후 Pull Request를 생성합니다.
-14. 사용자가 Netlify Deploy Preview에서 핵심 기능을 직접 확인하기 전에는 `main`에 병합하지 않습니다.
-15. 변경 파일, 테스트 결과, 기존 기능과 데이터 영향 여부를 한국어로 설명합니다.
-16. API 키, 비밀번호, 개인정보를 코드나 저장소에 추가하지 않습니다.
+14. 사용자에게 Netlify Deploy Preview 검수를 요청하기 전에 `.github/workflows/user-acceptance-ready.yml`의 `User Acceptance Ready` 체크가 GREEN이어야 합니다.
+15. UAR는 기존 회귀·빌드, 최소 초기상태 UI 계약, 정확한 PR HEAD Deploy Preview, 실제 PWA 자산/환경 정합성, 실제 Preview 대표 브라우저 흐름을 모두 통과해야 합니다.
+16. `Deploy Preview ready`나 개별 테스트 성공만으로 사용자 검수를 요청하지 않습니다. 사람이 발견한 메뉴 누락·버튼 미연결·로딩 실패 등 기계적 오류는 QA Escape로 보고 회귀검사를 남긴 뒤 UAR 전체를 다시 실행합니다.
+17. 사용자가 UAR GREEN인 Netlify Deploy Preview에서 핵심 기능을 직접 확인하기 전에는 `main`에 병합하지 않습니다.
+18. 변경 파일, 테스트 결과, 기존 기능과 데이터 영향 여부를 한국어로 설명합니다.
+19. API 키, 비밀번호, 개인정보를 코드나 저장소에 추가하지 않습니다.
+
+공통 UAR 기준은 `cetin072/ai-development-system/docs/USER_ACCEPTANCE_READY_GATE.md`를 따릅니다.
