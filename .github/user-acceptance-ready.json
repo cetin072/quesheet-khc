@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "bootstrap": "",
+  "preview": {
+    "required": true,
+    "status_context": "netlify/quesheet-khc/deploy-preview",
+    "wait_seconds": 600
+  },
+  "checks": {
+    "static_regression": {"command": "npm test && npm run build"},
+    "environment_parity": {"command": "node scripts/uar-environment-parity.mjs"},
+    "role_ui_contract": {"fixture_policy": "minimal", "command": "node scripts/uar-ui-contract.mjs"},
+    "preview_runtime": {"command": "node scripts/uar-preview-runtime.mjs"},
+    "representative_smoke": {"command": "node scripts/uar-representative-smoke.mjs"}
+  },
+  "qa_escape_regressions": [
+    "tests/regression.test.mjs",
+    "tests/mobile-regression.test.mjs",
+    "tests/build.test.mjs"
+  ]
+}
