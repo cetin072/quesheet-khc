@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "bootstrap": "",
   "preview": {
     "required": true,
@@ -11,11 +11,13 @@
     "environment_parity": {"command": "node scripts/uar-environment-parity.mjs"},
     "role_ui_contract": {"fixture_policy": "minimal", "command": "node scripts/uar-ui-contract.mjs"},
     "preview_runtime": {"command": "node scripts/uar-preview-runtime.mjs"},
-    "representative_smoke": {"command": "node scripts/uar-representative-smoke.mjs"}
+    "representative_smoke": {"command": "node scripts/uar-representative-smoke.mjs"},
+    "visual_stability": {"surface_policy": "representative", "command": "node scripts/uar-visual-stability.mjs"}
   },
   "qa_escape_regressions": [
     "tests/regression.test.mjs",
     "tests/mobile-regression.test.mjs",
-    "tests/build.test.mjs"
+    "tests/build.test.mjs",
+    "scripts/uar-visual-stability.mjs"
   ]
 }
